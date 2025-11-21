@@ -97,6 +97,37 @@ const KEN_BURNS = {
 
 // Configuración de programación de publicaciones
 const HORAS_PUBLICACION = [9, 12, 15, 18, 21]; // Horas del día para publicar (formato 24h)
+const TIMEZONE = 'America/Mexico_City'; // Zona horaria de México
+
+// =============================================================================
+// UTILIDADES DE FECHA Y HORA
+// =============================================================================
+
+/**
+ * Obtener fecha/hora actual en timezone de México
+ * @returns {Date} - Fecha en timezone de México
+ */
+function obtenerFechaMexico() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: TIMEZONE }));
+}
+
+/**
+ * Convertir fecha a timezone de México
+ * @param {Date} fecha - Fecha a convertir
+ * @returns {Date} - Fecha en timezone de México
+ */
+function convertirAMexico(fecha) {
+  return new Date(fecha.toLocaleString('en-US', { timeZone: TIMEZONE }));
+}
+
+/**
+ * Obtener timestamp ISO en timezone de México
+ * @returns {string} - Timestamp ISO
+ */
+function obtenerTimestampMexico() {
+  const fechaMX = obtenerFechaMexico();
+  return fechaMX.toISOString();
+}
 
 // =============================================================================
 // UTILIDADES
@@ -463,7 +494,7 @@ async function registrarVideoEnDB(guion, videoStoragePath, videoUrl, videoSizeBy
           estado: 'pendiente_publicar',
           metadata: {
             generado_automaticamente: true,
-            fecha_generacion: new Date().toISOString(),
+            fecha_generacion: obtenerTimestampMexico(),
             con_subtitulos: true,
             efecto_ken_burns: true,
             resolucion: '1080x1920',
@@ -496,7 +527,7 @@ async function registrarVideoEnDB(guion, videoStoragePath, videoUrl, videoSizeBy
           estado: 'pendiente_publicar',
           metadata: {
             generado_automaticamente: true,
-            fecha_generacion: new Date().toISOString(),
+            fecha_generacion: obtenerTimestampMexico(),
             con_subtitulos: true,
             efecto_ken_burns: true,
             resolucion: '1080x1920',
@@ -536,7 +567,7 @@ async function actualizarEstadoGuion(guionId, nuevoEstado) {
       .from('guiones')
       .update({ 
         estado: nuevoEstado,
-        updated_at: new Date().toISOString()
+        updated_at: obtenerTimestampMexico()
       })
       .eq('id', guionId);
 
@@ -629,8 +660,8 @@ async function obtenerHorasProgramadasPorCanal(canalId, fecha) {
  * @returns {Promise<Date|null>} - Fecha y hora disponible o null
  */
 async function encontrarProximaHoraDisponible(canalId) {
-  const ahora = new Date();
-  const zonaHoraria = 'America/Mexico_City'; // Ajustar según tu zona horaria
+  // Obtener hora actual en México
+  const ahora = obtenerFechaMexico();
   
   // Intentar en los próximos 7 días
   for (let diasAdelante = 0; diasAdelante < 7; diasAdelante++) {
@@ -686,7 +717,7 @@ async function programarPublicacionVideo(videoId, fechaHora) {
       .from('videos')
       .update({
         publicacion_programada_at: fechaHora.toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: obtenerTimestampMexico()
       })
       .eq('id', videoId);
 
@@ -705,7 +736,7 @@ async function programarPublicacionVideo(videoId, fechaHora) {
 async function programarPublicaciones() {
   console.log('\n' + '='.repeat(80));
   console.log('📅 INICIANDO PROGRAMACIÓN DE PUBLICACIONES');
-  console.log('⏰ Timestamp:', new Date().toLocaleString('es-MX'));
+  console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: TIMEZONE }));
   console.log('='.repeat(80) + '\n');
 
   try {
@@ -786,8 +817,8 @@ async function obtenerVideosListosParaPublicar() {
           canales!inner (
             id,
             nombre,
-            plataforma,
-            credenciales
+            credenciales,
+            musica_fondo_url
           )
         )
       `)
@@ -797,7 +828,23 @@ async function obtenerVideosListosParaPublicar() {
       .order('publicacion_programada_at', { ascending: true });
 
     if (error) throw error;
-    return data || [];
+    
+    // Filtrar videos que aún tienen plataformas pendientes de publicar
+    // Un video se considera "listo" si le falta YouTube o Facebook (o ambos)
+    const videosPendientes = (data || []).filter(video => {
+      const tieneYouTube = video.youtube_video_id != null;
+      const tieneFacebook = video.facebook_post_id != null;
+      
+      // Si ambos ya están publicados, omitir este video
+      if (tieneYouTube && tieneFacebook) {
+        return false;
+      }
+      
+      // Si falta al menos una plataforma, incluir
+      return true;
+    });
+    
+    return videosPendientes;
   } catch (error) {
     console.error('❌ Error al obtener videos listos para publicar:', error.message);
     return [];
@@ -838,6 +885,91 @@ async function descargarVideoParaPublicar(videoUrl, destino) {
 }
 
 /**
+ * Agregar música de fondo al video
+ * @param {string} rutaVideoOriginal - Ruta del video original
+ * @param {string} urlMusicaFondo - URL de la música de fondo (MP3)
+ * @param {string} rutaVideoSalida - Ruta del video con música
+ * @returns {Promise<string>} - Ruta del video con música
+ */
+async function agregarMusicaDeFondo(rutaVideoOriginal, urlMusicaFondo, rutaVideoSalida) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      console.log('🎵 Agregando música de fondo...');
+      
+      // 1. Descargar música de fondo
+      const nombreMusica = `musica_${Date.now()}.mp3`;
+      const rutaMusica = path.join(path.dirname(rutaVideoOriginal), nombreMusica);
+      
+      console.log('   📥 Descargando música de fondo...');
+      await descargarArchivo(urlMusicaFondo, rutaMusica);
+      
+      // 2. Obtener duración del video
+      const duracionVideo = await obtenerDuracionAudio(rutaVideoOriginal);
+      console.log(`   ⏱️  Duración del video: ${duracionVideo.toFixed(2)}s`);
+      
+      // 3. Procesar video con música de fondo
+      console.log('   🎼 Mezclando audio...');
+      
+      // Calcular duración del fade out (últimos 3 segundos)
+      const duracionFadeOut = 3;
+      const inicioFadeOut = duracionVideo - duracionFadeOut;
+      
+      ffmpeg(rutaVideoOriginal)
+        .input(rutaMusica)
+        .complexFilter([
+          // Recortar música a la duración del video
+          `[1:a]atrim=0:${duracionVideo},asetpts=PTS-STARTPTS[musica_recortada]`,
+          // Reducir volumen de música al 40% y aplicar fade out
+          `[musica_recortada]volume=0.4,afade=t=out:st=${inicioFadeOut}:d=${duracionFadeOut}[musica_ajustada]`,
+          // Mezclar audio original con música de fondo
+          `[0:a][musica_ajustada]amix=inputs=2:duration=first:dropout_transition=2[audio_final]`
+        ])
+        .outputOptions([
+          '-map 0:v',           // Video del original
+          '-map [audio_final]', // Audio mezclado
+          '-c:v copy',          // Copiar video sin recodificar
+          '-c:a aac',           // Codificar audio a AAC
+          '-b:a 192k',          // Bitrate de audio
+          '-shortest'           // Terminar cuando el stream más corto termine
+        ])
+        .output(rutaVideoSalida)
+        .on('start', (commandLine) => {
+          console.log('   🎥 Procesando video con música...');
+        })
+        .on('progress', (progress) => {
+          if (progress.percent) {
+            process.stdout.write(`\r   ⏳ Progreso: ${progress.percent.toFixed(1)}%`);
+          }
+        })
+        .on('end', () => {
+          console.log('\n   ✅ Música de fondo agregada');
+          // Eliminar archivo de música temporal
+          try {
+            fs.unlinkSync(rutaMusica);
+          } catch (e) {
+            console.warn('   ⚠️  No se pudo eliminar música temporal:', e.message);
+          }
+          resolve(rutaVideoSalida);
+        })
+        .on('error', (error, stdout, stderr) => {
+          console.error('\n   ❌ Error al agregar música:', error.message);
+          // Limpiar archivos temporales
+          try {
+            if (fs.existsSync(rutaMusica)) fs.unlinkSync(rutaMusica);
+            if (fs.existsSync(rutaVideoSalida)) fs.unlinkSync(rutaVideoSalida);
+          } catch (e) {}
+          reject(error);
+        })
+        .run();
+        
+    } catch (error) {
+      console.error('   ❌ Error en agregarMusicaDeFondo:', error.message);
+      reject(error);
+    }
+  });
+}
+
+/**
  * Publicar video en YouTube
  * @param {Object} video - Objeto del video
  * @param {Object} canal - Objeto del canal con credenciales
@@ -847,29 +979,112 @@ async function descargarVideoParaPublicar(videoUrl, destino) {
 async function publicarEnYouTube(video, canal, rutaVideoLocal) {
   console.log('📺 Publicando en YouTube...');
   
+  let rutaVideoConMusica = null;
+  
   try {
     if (!YOUTUBE_CLIENT_ID || !YOUTUBE_CLIENT_SECRET) {
       throw new Error('Credenciales de YouTube no configuradas');
     }
-
-    // TODO: Implementar con googleapis
-    // Aquí debes usar la librería de YouTube API
-    // Por ahora retornamos un placeholder
     
     console.log(`   Canal: ${canal.nombre}`);
     console.log(`   Título: ${video.titulo}`);
     console.log(`   Descripción: ${video.descripcion?.substring(0, 100)}...`);
     
-    // Simular publicación (reemplazar con código real)
-    console.warn('⚠️  Publicación en YouTube pendiente de implementar con googleapis');
-    console.warn('   Necesitas instalar: npm install googleapis');
+    // Verificar si el canal tiene música de fondo configurada
+    let rutaVideoFinal = rutaVideoLocal;
     
-    // Retornar ID simulado (eliminar cuando implementes)
-    return null;
+    if (canal.musica_fondo_url) {
+      console.log('   🎵 Canal tiene música de fondo configurada');
+      
+      // Crear ruta para video con música
+      rutaVideoConMusica = rutaVideoLocal.replace('.mp4', '_con_musica.mp4');
+      
+      // Agregar música de fondo
+      await agregarMusicaDeFondo(rutaVideoLocal, canal.musica_fondo_url, rutaVideoConMusica);
+      
+      rutaVideoFinal = rutaVideoConMusica;
+      console.log(`   ✅ Video con música listo: ${path.basename(rutaVideoFinal)}`);
+    } else {
+      console.log('   ℹ️  No se agregará música de fondo (no configurada en canal)');
+    }
+
+    const { google } = require('googleapis');
+    const youtube = google.youtube('v3');
+    
+    const credenciales = canal.credenciales?.youtube;
+    if (!credenciales || !credenciales.refresh_token) {
+      throw new Error('Canal no tiene credenciales de YouTube configuradas');
+    }
+
+    // Configurar OAuth2
+    const oauth2Client = new google.auth.OAuth2(
+      credenciales.client_id || YOUTUBE_CLIENT_ID,
+      credenciales.client_secret || YOUTUBE_CLIENT_SECRET,
+      YOUTUBE_REDIRECT_URI
+    );
+
+    oauth2Client.setCredentials({
+      refresh_token: credenciales.refresh_token
+    });
+
+    // Obtener información del archivo final a subir
+    const fileSize = fs.statSync(rutaVideoFinal).size;
+    console.log(`   📊 Tamaño del video a subir: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
+    
+    // Preparar título y descripción para YouTube Shorts
+    // YouTube detecta Shorts automáticamente si: duración < 60s y aspect ratio 9:16
+    const tituloYouTube = video.titulo.includes('#Shorts') ? video.titulo : `${video.titulo} #Shorts`;
+    const descripcionYouTube = video.descripcion || '';
+    
+    console.log(`   📤 Subiendo video a YouTube...`);
+    console.log(`   🎬 Formato: Short (9:16, vertical)`);
+    
+    // Subir video
+    const response = await youtube.videos.insert({
+      auth: oauth2Client,
+      part: 'snippet,status',
+      requestBody: {
+        snippet: {
+          title: tituloYouTube,
+          description: descripcionYouTube,
+          categoryId: '22', // People & Blogs
+          defaultLanguage: 'es',
+          defaultAudioLanguage: 'es',
+          tags: ['Shorts', 'Short', 'Vertical']
+        },
+        status: {
+          privacyStatus: 'public',
+          selfDeclaredMadeForKids: false
+        }
+      },
+      media: {
+        body: fs.createReadStream(rutaVideoFinal)
+      }
+    });
+
+    const videoId = response.data.id;
+    console.log(`   ✅ Video subido exitosamente!`);
+    console.log(`   🔗 URL: https://youtube.com/watch?v=${videoId}`);
+    console.log(`   📱 Short URL: https://youtube.com/shorts/${videoId}`);
+    
+    return videoId;
     
   } catch (error) {
     console.error('❌ Error al publicar en YouTube:', error.message);
+    if (error.response) {
+      console.error('   Detalles:', JSON.stringify(error.response.data, null, 2));
+    }
     throw error;
+  } finally {
+    // Limpiar video temporal con música
+    if (rutaVideoConMusica && fs.existsSync(rutaVideoConMusica)) {
+      try {
+        fs.unlinkSync(rutaVideoConMusica);
+        console.log('   🧹 Video temporal con música eliminado');
+      } catch (e) {
+        console.warn('   ⚠️  No se pudo eliminar video temporal:', e.message);
+      }
+    }
   }
 }
 
@@ -915,17 +1130,30 @@ async function publicarEnFacebook(video, canal, rutaVideoLocal) {
 async function actualizarVideoPublicado(videoId, plataforma, externalId) {
   try {
     const updates = {
-      updated_at: new Date().toISOString()
+      updated_at: obtenerTimestampMexico()
     };
 
     if (plataforma === 'youtube' && externalId) {
       updates.youtube_video_id = externalId;
-      updates.estado = 'publicado';
-      updates.publicado_at = new Date().toISOString();
     } else if (plataforma === 'facebook' && externalId) {
       updates.facebook_post_id = externalId;
+    }
+    
+    // Marcar como publicado solo si ambas plataformas tienen ID
+    // Primero obtenemos el video actual
+    const { data: videoActual } = await supabase
+      .from('videos')
+      .select('youtube_video_id, facebook_post_id')
+      .eq('id', videoId)
+      .single();
+    
+    // Si después de este update ambos IDs están presentes, marcar como publicado
+    const youtubeId = plataforma === 'youtube' ? externalId : videoActual?.youtube_video_id;
+    const facebookId = plataforma === 'facebook' ? externalId : videoActual?.facebook_post_id;
+    
+    if (youtubeId && facebookId) {
       updates.estado = 'publicado';
-      updates.publicado_at = new Date().toISOString();
+      updates.publicado_at = obtenerTimestampMexico();
     }
 
     const { error } = await supabase
@@ -947,7 +1175,7 @@ async function actualizarVideoPublicado(videoId, plataforma, externalId) {
 async function publicarEnRedesSociales() {
   console.log('\n' + '='.repeat(80));
   console.log('📱 INICIANDO PUBLICACIÓN EN REDES SOCIALES');
-  console.log('⏰ Timestamp:', new Date().toLocaleString('es-MX'));
+  console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: TIMEZONE }));
   console.log('='.repeat(80) + '\n');
 
   const tempPublicacion = path.join(TEMP_DIR, `publicacion_${Date.now()}`);
@@ -969,36 +1197,66 @@ async function publicarEnRedesSociales() {
 
     console.log(`✅ ${videos.length} video(s) listo(s) para publicar\n`);
 
-    // 2. Publicar cada video
+    // 2. Publicar cada video en ambas plataformas
     let publicadosYouTube = 0;
     let publicadosFacebook = 0;
-    let errores = 0;
+    let erroresYouTube = 0;
+    let erroresFacebook = 0;
 
     for (const video of videos) {
       const canal = video.guiones.canales;
-      const plataforma = canal.plataforma?.toLowerCase();
 
       console.log('─'.repeat(80));
       console.log(`📹 Publicando: ${video.titulo}`);
-      console.log(`   Canal: ${canal.nombre} (${plataforma})`);
+      console.log(`   Canal: ${canal.nombre}`);
       console.log(`   Programado: ${new Date(video.publicacion_programada_at).toLocaleString('es-MX')}`);
+      
+      // Verificar qué plataformas ya están publicadas
+      const yaPublicadoYouTube = video.youtube_video_id != null;
+      const yaPublicadoFacebook = video.facebook_post_id != null;
+      
+      if (yaPublicadoYouTube) {
+        console.log('   ⏭️  YouTube: Ya publicado (ID: ' + video.youtube_video_id + ')');
+      }
+      if (yaPublicadoFacebook) {
+        console.log('   ⏭️  Facebook: Ya publicado (ID: ' + video.facebook_post_id + ')');
+      }
 
       try {
-        // Descargar video
+        // Descargar video una sola vez (solo si hay algo pendiente de publicar)
         const rutaVideoLocal = path.join(tempPublicacion, `video_${video.id}.mp4`);
         await descargarVideoParaPublicar(video.video_url, rutaVideoLocal);
 
-        // Publicar según la plataforma del canal
-        if (plataforma === 'youtube') {
-          const youtubeId = await publicarEnYouTube(video, canal, rutaVideoLocal);
-          await actualizarVideoPublicado(video.id, 'youtube', youtubeId);
-          publicadosYouTube++;
-        } else if (plataforma === 'facebook') {
-          const facebookId = await publicarEnFacebook(video, canal, rutaVideoLocal);
-          await actualizarVideoPublicado(video.id, 'facebook', facebookId);
-          publicadosFacebook++;
-        } else {
-          console.warn(`⚠️  Plataforma no soportada: ${plataforma}`);
+        // Publicar en YouTube (con música de fondo) - solo si no está publicado
+        if (!yaPublicadoYouTube) {
+          console.log('\n   📺 Publicando en YouTube...');
+          try {
+            const youtubeId = await publicarEnYouTube(video, canal, rutaVideoLocal);
+            if (youtubeId) {
+              await actualizarVideoPublicado(video.id, 'youtube', youtubeId);
+              publicadosYouTube++;
+              console.log('   ✅ Publicado en YouTube');
+            }
+          } catch (errorYT) {
+            console.error('   ❌ Error en YouTube:', errorYT.message);
+            erroresYouTube++;
+          }
+        }
+
+        // Publicar en Facebook (video original sin música) - solo si no está publicado
+        if (!yaPublicadoFacebook) {
+          console.log('\n   📘 Publicando en Facebook...');
+          try {
+            const facebookId = await publicarEnFacebook(video, canal, rutaVideoLocal);
+            if (facebookId) {
+              await actualizarVideoPublicado(video.id, 'facebook', facebookId);
+              publicadosFacebook++;
+              console.log('   ✅ Publicado en Facebook');
+            }
+          } catch (errorFB) {
+            console.error('   ❌ Error en Facebook:', errorFB.message);
+            erroresFacebook++;
+          }
         }
 
         // Eliminar archivo temporal del video
@@ -1006,20 +1264,24 @@ async function publicarEnRedesSociales() {
           fs.unlinkSync(rutaVideoLocal);
         }
 
-        console.log(`✅ Video publicado exitosamente\n`);
+        console.log(`\n✅ Proceso completado para este video\n`);
 
       } catch (error) {
-        console.error(`❌ Error publicando video ${video.id}:`, error.message);
-        errores++;
+        console.error(`❌ Error general publicando video ${video.id}:`, error.message);
+        if (!yaPublicadoYouTube) erroresYouTube++;
+        if (!yaPublicadoFacebook) erroresFacebook++;
         console.log('');
       }
     }
 
     console.log('='.repeat(80));
     console.log('✅ PUBLICACIÓN COMPLETADA');
-    console.log(`   YouTube: ${publicadosYouTube}`);
-    console.log(`   Facebook: ${publicadosFacebook}`);
-    console.log(`   Errores: ${errores}`);
+    console.log('   📺 YouTube:');
+    console.log(`      Publicados: ${publicadosYouTube}`);
+    console.log(`      Errores: ${erroresYouTube}`);
+    console.log('   📘 Facebook:');
+    console.log(`      Publicados: ${publicadosFacebook}`);
+    console.log(`      Errores: ${erroresFacebook}`);
     console.log('='.repeat(80) + '\n');
 
   } catch (error) {
@@ -1247,9 +1509,85 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 function generarVideo(rutasImagenes, rutaAudio, duracionPorImagen, rutaSalida, rutaASS = null) {
   return new Promise(async (resolve, reject) => {
     try {
+      console.log('\n🔍 === INFORMACIÓN DE DEPURACIÓN ===');
       console.log('🎬 Iniciando generación de video...');
       console.log(`   - Total de imágenes: ${rutasImagenes.length}`);
       console.log(`   - Duración por imagen: ${duracionPorImagen.toFixed(2)}s`);
+      console.log(`   - Duración total estimada: ${(rutasImagenes.length * duracionPorImagen).toFixed(2)}s`);
+      
+      // Verificar imágenes
+      console.log('\n📸 Verificando imágenes:');
+      for (let i = 0; i < rutasImagenes.length; i++) {
+        const ruta = rutasImagenes[i];
+        const existe = fs.existsSync(ruta);
+        if (existe) {
+          const stats = fs.statSync(ruta);
+          console.log(`   [${i}] ✅ ${path.basename(ruta)} (${(stats.size / 1024).toFixed(2)} KB)`);
+          
+          // Intentar obtener dimensiones de la imagen usando ffprobe
+          try {
+            const probe = await new Promise((res, rej) => {
+              ffmpeg.ffprobe(ruta, (err, metadata) => {
+                if (err) rej(err);
+                else res(metadata);
+              });
+            });
+            const videoStream = probe.streams.find(s => s.codec_type === 'video');
+            if (videoStream) {
+              console.log(`       Resolución: ${videoStream.width}x${videoStream.height}`);
+              console.log(`       Codec: ${videoStream.codec_name}`);
+            }
+          } catch (probeErr) {
+            console.warn(`       ⚠️  No se pudo obtener metadata: ${probeErr.message}`);
+          }
+        } else {
+          console.error(`   [${i}] ❌ NO EXISTE: ${ruta}`);
+          throw new Error(`Imagen no encontrada: ${ruta}`);
+        }
+      }
+      
+      // Verificar audio
+      console.log('\n🎵 Verificando audio:');
+      const audioExiste = fs.existsSync(rutaAudio);
+      if (audioExiste) {
+        const audioStats = fs.statSync(rutaAudio);
+        console.log(`   ✅ ${path.basename(rutaAudio)} (${(audioStats.size / 1024).toFixed(2)} KB)`);
+        
+        try {
+          const audioProbe = await new Promise((res, rej) => {
+            ffmpeg.ffprobe(rutaAudio, (err, metadata) => {
+              if (err) rej(err);
+              else res(metadata);
+            });
+          });
+          const audioStream = audioProbe.streams.find(s => s.codec_type === 'audio');
+          if (audioStream) {
+            console.log(`   Duración: ${audioProbe.format.duration}s`);
+            console.log(`   Codec: ${audioStream.codec_name}`);
+            console.log(`   Sample rate: ${audioStream.sample_rate} Hz`);
+            console.log(`   Channels: ${audioStream.channels}`);
+            console.log(`   Bitrate: ${audioProbe.format.bit_rate ? (audioProbe.format.bit_rate / 1000).toFixed(0) : 'N/A'} kbps`);
+          }
+        } catch (probeErr) {
+          console.warn(`   ⚠️  No se pudo obtener metadata de audio: ${probeErr.message}`);
+        }
+      } else {
+        console.error(`   ❌ NO EXISTE: ${rutaAudio}`);
+        throw new Error(`Audio no encontrado: ${rutaAudio}`);
+      }
+      
+      if (rutaASS) {
+        console.log('\n📝 Archivo de subtítulos:');
+        const assExiste = fs.existsSync(rutaASS);
+        if (assExiste) {
+          const assStats = fs.statSync(rutaASS);
+          console.log(`   ✅ ${path.basename(rutaASS)} (${(assStats.size / 1024).toFixed(2)} KB)`);
+        } else {
+          console.warn(`   ⚠️  NO EXISTE: ${rutaASS}`);
+        }
+      }
+      
+      console.log('\n🎬 === INICIANDO GENERACIÓN ===\n');
 
       // Paso 1: Generar video base sin subtítulos
       const rutaVideoTemp = rutaASS ? rutaSalida.replace('.mp4', '_temp.mp4') : rutaSalida;
@@ -1266,7 +1604,8 @@ function generarVideo(rutasImagenes, rutaAudio, duracionPorImagen, rutaSalida, r
         const mitadDuracion = duracionFrames / 2;
         
         // Fórmula de easing para transiciones super rápidas con zoom más dramático
-        const filtro = `${inputLabel}scale=${VIDEO_CONFIG.width}:${VIDEO_CONFIG.height}:force_original_aspect_ratio=increase,crop=${VIDEO_CONFIG.width}:${VIDEO_CONFIG.height},zoompan=z='if(lte(on,${mitadDuracion}),1.5-0.5*(1-pow(1-on/${mitadDuracion},18)),1.0+0.5*pow((on-${mitadDuracion})/${mitadDuracion},18))':d=${duracionFrames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${VIDEO_CONFIG.width}x${VIDEO_CONFIG.height},fps=30,setpts=PTS-STARTPTS${outputLabel}`;
+        // setsar=1 fuerza un SAR consistente (1:1) para evitar errores en concat
+        const filtro = `${inputLabel}scale=${VIDEO_CONFIG.width}:${VIDEO_CONFIG.height}:force_original_aspect_ratio=increase,crop=${VIDEO_CONFIG.width}:${VIDEO_CONFIG.height},setsar=1,zoompan=z='if(lte(on,${mitadDuracion}),1.5-0.5*(1-pow(1-on/${mitadDuracion},18)),1.0+0.5*pow((on-${mitadDuracion})/${mitadDuracion},18))':d=${duracionFrames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${VIDEO_CONFIG.width}x${VIDEO_CONFIG.height},fps=30,setpts=PTS-STARTPTS${outputLabel}`;
         
         filtros.push(filtro);
       });
@@ -1304,8 +1643,11 @@ function generarVideo(rutasImagenes, rutaAudio, duracionPorImagen, rutaSalida, r
             '-shortest'
           ])
           .output(rutaVideoTemp)
-          .on('start', () => {
+          .on('start', (commandLine) => {
             console.log('🎥 Generando video base con efecto Ken Burns...');
+            console.log('\n🔧 Comando FFmpeg completo:');
+            console.log(commandLine);
+            console.log('');
           })
           .on('progress', (progress) => {
             if (progress.percent) {
@@ -1316,8 +1658,12 @@ function generarVideo(rutasImagenes, rutaAudio, duracionPorImagen, rutaSalida, r
             console.log('\n✅ Video base generado');
             resolveBase();
           })
-          .on('error', (error) => {
+          .on('error', (error, stdout, stderr) => {
             console.error('\n❌ Error generando video base:', error.message);
+            console.error('\n📋 STDERR de FFmpeg:');
+            console.error(stderr || 'No stderr disponible');
+            console.error('\n📋 STDOUT de FFmpeg:');
+            console.error(stdout || 'No stdout disponible');
             rejectBase(error);
           })
           .run();
@@ -1381,7 +1727,7 @@ function generarVideo(rutasImagenes, rutaAudio, duracionPorImagen, rutaSalida, r
 async function procesarVideos() {
   console.log('\n' + '='.repeat(80));
   console.log('🎬 INICIANDO PROCESO DE GENERACIÓN DE VIDEOS');
-  console.log('⏰ Timestamp:', new Date().toLocaleString('es-MX'));
+  console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: TIMEZONE }));
   console.log('='.repeat(80) + '\n');
 
   try {
@@ -1628,11 +1974,11 @@ function iniciarCron() {
   });
   console.log('✅ Cron job 2: Programación de publicaciones (cada 5 minutos)');
 
-  // Cron 3: Publicación en redes sociales - cada 5 minutos
-  cron.schedule('*/5 * * * *', () => {
+  // Cron 3: Publicación en redes sociales - cada 2 minutos
+  cron.schedule('*/2 * * * *', () => {
     publicarEnRedesSociales();
   });
-  console.log('✅ Cron job 3: Publicación en redes sociales (cada 5 minutos)');
+  console.log('✅ Cron job 3: Publicación en redes sociales (cada 2 minutos)');
 
   console.log('\n⏳ Esperando próximas ejecuciones...\n');
 }
