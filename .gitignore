@@ -1,0 +1,20 @@
+# Variables de entorno
+.env
+
+# Archivos temporales
+temp/
+*.tmp
+
+# Videos exportados (opcional: comentar si quieres versionar los videos)
+exports/
+
+# Node modules
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
