@@ -89,14 +89,48 @@ const VIDEO_CONFIG = {
   pixelFormat: 'yuv420p'
 };
 
+// Configuración de Color Grading
+const COLOR_GRADING = {
+  saturation: 1.3,      // Aumentar saturación 30%
+  brightness: 0.05,     // Aumentar brillo 5%
+  contrast: 1.1,        // Aumentar contraste 10%
+  vignetteIntensity: 0.3 // Intensidad del viñeteado (0-1)
+};
+
 // Configuración efecto Ken Burns
 const KEN_BURNS = {
-  zoomStart: 1.5,  // Inicia con zoom out (más alejado)
+  zoomStart: 1.7,  // Inicia con zoom out (más alejado)
   zoomEnd: 1.0     // Termina con zoom in (más cerca)
 };
 
+// Configuración de patrones de paneo
+const PATRONES_PAN = [
+  { 
+    nombre: 'izquierda-derecha',
+    factorX: -0.3,  // Inicia desde la izquierda
+    direccionX: 1   // Se mueve hacia la derecha
+  },
+  { 
+    nombre: 'derecha-izquierda',
+    factorX: 0.3,   // Inicia desde la derecha
+    direccionX: -1  // Se mueve hacia la izquierda
+  },
+  { 
+    nombre: 'arriba-abajo',
+    factorY: -0.3,  // Inicia desde arriba
+    direccionY: 1   // Se mueve hacia abajo
+  },
+  { 
+    nombre: 'abajo-arriba',
+    factorY: 0.3,   // Inicia desde abajo
+    direccionY: -1  // Se mueve hacia arriba
+  }
+];
+
 // Configuración de programación de publicaciones
 const HORAS_PUBLICACION = [9, 12, 15, 18, 21]; // Horas del día para publicar (formato 24h)
+const MINUTOS_DESFACE_MIN = 0;  // Desface mínimo en minutos
+const MINUTOS_DESFACE_MAX = 45; // Desface máximo en minutos (aleatorio entre 0-45 min)
 const TIMEZONE = 'America/Mexico_City'; // Zona horaria de México
 
 // =============================================================================
@@ -127,6 +161,14 @@ function convertirAMexico(fecha) {
 function obtenerTimestampMexico() {
   const fechaMX = obtenerFechaMexico();
   return fechaMX.toISOString();
+}
+
+/**
+ * Generar desface aleatorio de minutos
+ * @returns {number} - Minutos aleatorios entre MINUTOS_DESFACE_MIN y MINUTOS_DESFACE_MAX
+ */
+function generarDesfaceAleatorio() {
+  return Math.floor(Math.random() * (MINUTOS_DESFACE_MAX - MINUTOS_DESFACE_MIN + 1)) + MINUTOS_DESFACE_MIN;
 }
 
 // =============================================================================
@@ -455,17 +497,25 @@ async function registrarVideoEnDB(guion, videoStoragePath, videoUrl, videoSizeBy
   console.log('💾 Actualizando video en base de datos...');
   
   try {
-    // Extraer título del guion
-    let titulo = guion.nombre || 'Video sin título';
+    // Extraer títulos específicos para cada plataforma
+    let tituloYouTube = guion.nombre || 'Video sin título';
+    let tituloFacebook = guion.nombre || 'Video sin título';
     
-    // Si el guion tiene un campo titulo (jsonb), extraerlo
-    if (guion.titulo) {
-      if (typeof guion.titulo === 'string') {
-        titulo = guion.titulo;
-      } else if (guion.titulo.texto) {
-        titulo = guion.titulo.texto;
+    // Si el guion tiene un campo titulo (jsonb), extraer títulos por plataforma
+    if (guion.titulo && typeof guion.titulo === 'object') {
+      // YouTube Shorts tiene prioridad, sino usar el nombre del guion
+      if (guion.titulo.youtube_shorts) {
+        tituloYouTube = guion.titulo.youtube_shorts;
+      }
+      
+      // Facebook
+      if (guion.titulo.facebook) {
+        tituloFacebook = guion.titulo.facebook;
       }
     }
+    
+    // Para la tabla videos, usar el título de YouTube como principal
+    let titulo = tituloYouTube;
     
     // Extraer descripción
     let descripcion = guion.descripcion || '';
@@ -498,7 +548,9 @@ async function registrarVideoEnDB(guion, videoStoragePath, videoUrl, videoSizeBy
             con_subtitulos: true,
             efecto_ken_burns: true,
             resolucion: '1080x1920',
-            formato: '9:16'
+            formato: '9:16',
+            titulo_youtube: tituloYouTube,
+            titulo_facebook: tituloFacebook
           }
         })
         .eq('id', videoExistente.id)
@@ -531,7 +583,9 @@ async function registrarVideoEnDB(guion, videoStoragePath, videoUrl, videoSizeBy
             con_subtitulos: true,
             efecto_ken_burns: true,
             resolucion: '1080x1920',
-            formato: '9:16'
+            formato: '9:16',
+            titulo_youtube: tituloYouTube,
+            titulo_facebook: tituloFacebook
           }
         })
         .select()
@@ -616,7 +670,7 @@ async function obtenerVideosPendientesProgramar() {
  * Obtener videos ya programados para un canal en una fecha específica
  * @param {string} canalId - ID del canal
  * @param {Date} fecha - Fecha a consultar
- * @returns {Promise<Array>} - Horas ya ocupadas
+ * @returns {Promise<Array>} - Array de objetos con hora base y timestamp completo
  */
 async function obtenerHorasProgramadasPorCanal(canalId, fecha) {
   try {
@@ -641,10 +695,17 @@ async function obtenerHorasProgramadasPorCanal(canalId, fecha) {
 
     if (error) throw error;
 
-    // Extraer las horas ya programadas
+    // Extraer las horas base ya programadas (considerando ventana de tiempo)
     const horasProgramadas = (data || []).map(video => {
-      const fecha = new Date(video.publicacion_programada_at);
-      return fecha.getHours();
+      const fechaProgramada = new Date(video.publicacion_programada_at);
+      const hora = fechaProgramada.getHours();
+      const minutos = fechaProgramada.getMinutes();
+      
+      return {
+        horaBase: hora,
+        timestamp: fechaProgramada,
+        minutos: minutos
+      };
     });
 
     return horasProgramadas;
@@ -668,36 +729,53 @@ async function encontrarProximaHoraDisponible(canalId) {
     const fechaObjetivo = new Date(ahora);
     fechaObjetivo.setDate(ahora.getDate() + diasAdelante);
     
-    // Obtener horas ya ocupadas para este día
-    const horasOcupadas = await obtenerHorasProgramadasPorCanal(canalId, fechaObjetivo);
+    // Obtener videos ya programados para este día
+    const videosOcupados = await obtenerHorasProgramadasPorCanal(canalId, fechaObjetivo);
     
-    // Filtrar horas disponibles
-    const horasDisponibles = HORAS_PUBLICACION.filter(hora => !horasOcupadas.includes(hora));
+    // Extraer solo las horas base ya ocupadas (sin importar los minutos exactos)
+    const horasBaseOcupadas = videosOcupados.map(v => v.horaBase);
+    
+    // Filtrar horas disponibles (que no tengan videos programados en su ventana)
+    const horasDisponibles = HORAS_PUBLICACION.filter(hora => !horasBaseOcupadas.includes(hora));
     
     // Si es hoy, solo considerar horas futuras
     if (diasAdelante === 0) {
       const horaActual = ahora.getHours();
       const minutosActuales = ahora.getMinutes();
       
-      // Filtrar horas que ya pasaron (con margen de 30 minutos)
+      // Filtrar horas que ya pasaron (con margen considerando el desface máximo)
       const horasFuturas = horasDisponibles.filter(hora => {
+        // Si la hora base es mayor, está disponible
         if (hora > horaActual) return true;
+        // Si es la misma hora, verificar que haya tiempo suficiente (30 min de margen)
         if (hora === horaActual && minutosActuales < 30) return true;
         return false;
       });
       
       if (horasFuturas.length > 0) {
         const horaSeleccionada = horasFuturas[0];
+        const desfaceMinutos = generarDesfaceAleatorio();
+        
         const fechaProgramada = new Date(fechaObjetivo);
-        fechaProgramada.setHours(horaSeleccionada, 0, 0, 0);
+        fechaProgramada.setHours(horaSeleccionada, desfaceMinutos, 0, 0);
+        
+        console.log(`   🎲 Desface aleatorio: +${desfaceMinutos} minutos`);
+        console.log(`   ⏰ Hora programada: ${fechaProgramada.toLocaleString('es-MX', { timeZone: TIMEZONE })}`);
+        
         return fechaProgramada;
       }
     } else {
       // Para días futuros, tomar la primera hora disponible
       if (horasDisponibles.length > 0) {
         const horaSeleccionada = horasDisponibles[0];
+        const desfaceMinutos = generarDesfaceAleatorio();
+        
         const fechaProgramada = new Date(fechaObjetivo);
-        fechaProgramada.setHours(horaSeleccionada, 0, 0, 0);
+        fechaProgramada.setHours(horaSeleccionada, desfaceMinutos, 0, 0);
+        
+        console.log(`   🎲 Desface aleatorio: +${desfaceMinutos} minutos`);
+        console.log(`   ⏰ Hora programada: ${fechaProgramada.toLocaleString('es-MX', { timeZone: TIMEZONE })}`);
+        
         return fechaProgramada;
       }
     }
@@ -818,7 +896,8 @@ async function obtenerVideosListosParaPublicar() {
             id,
             nombre,
             credenciales,
-            musica_fondo_url
+            musica_fondo_youtube_url,
+            musica_fondo_facebook_url
           )
         )
       `)
@@ -987,20 +1066,29 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
     }
     
     console.log(`   Canal: ${canal.nombre}`);
-    console.log(`   Título: ${video.titulo}`);
+    
+    // Usar título específico de YouTube desde metadata, o el título general como fallback
+    let tituloYouTube = video.metadata?.titulo_youtube || video.titulo || 'Video sin título';
+    
+    // Validar que el título no esté vacío
+    if (!tituloYouTube || tituloYouTube.trim() === '') {
+      tituloYouTube = 'Video sin título';
+    }
+    
+    console.log(`   Título YouTube: ${tituloYouTube}`);
     console.log(`   Descripción: ${video.descripcion?.substring(0, 100)}...`);
     
     // Verificar si el canal tiene música de fondo configurada
     let rutaVideoFinal = rutaVideoLocal;
     
-    if (canal.musica_fondo_url) {
-      console.log('   🎵 Canal tiene música de fondo configurada');
+    if (canal.musica_fondo_youtube_url) {
+      console.log('   🎵 Canal tiene música de fondo para YouTube configurada');
       
       // Crear ruta para video con música
       rutaVideoConMusica = rutaVideoLocal.replace('.mp4', '_con_musica.mp4');
       
       // Agregar música de fondo
-      await agregarMusicaDeFondo(rutaVideoLocal, canal.musica_fondo_url, rutaVideoConMusica);
+      await agregarMusicaDeFondo(rutaVideoLocal, canal.musica_fondo_youtube_url, rutaVideoConMusica);
       
       rutaVideoFinal = rutaVideoConMusica;
       console.log(`   ✅ Video con música listo: ${path.basename(rutaVideoFinal)}`);
@@ -1033,7 +1121,8 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
     
     // Preparar título y descripción para YouTube Shorts
     // YouTube detecta Shorts automáticamente si: duración < 60s y aspect ratio 9:16
-    const tituloYouTube = video.titulo.includes('#Shorts') ? video.titulo : `${video.titulo} #Shorts`;
+    // Si el título ya incluye #Shorts no agregarlo de nuevo
+    const tituloFinal = tituloYouTube.includes('#Shorts') ? tituloYouTube : tituloYouTube;
     const descripcionYouTube = video.descripcion || '';
     
     console.log(`   📤 Subiendo video a YouTube...`);
@@ -1045,7 +1134,7 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
       part: 'snippet,status',
       requestBody: {
         snippet: {
-          title: tituloYouTube,
+          title: tituloFinal,
           description: descripcionYouTube,
           categoryId: '22', // People & Blogs
           defaultLanguage: 'es',
@@ -1098,26 +1187,155 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
 async function publicarEnFacebook(video, canal, rutaVideoLocal) {
   console.log('📘 Publicando en Facebook...');
   
+  let rutaVideoConMusica = null;
+  
   try {
-    if (!FACEBOOK_ACCESS_TOKEN) {
-      throw new Error('Token de Facebook no configurado');
+    console.log(`   Página: ${canal.nombre}`);
+    
+    // Usar título específico de Facebook desde metadata, o el título general como fallback
+    let tituloFacebook = video.metadata?.titulo_facebook || video.titulo || 'Video sin título';
+    
+    // Validar que el título no esté vacío
+    if (!tituloFacebook || tituloFacebook.trim() === '') {
+      tituloFacebook = 'Video sin título';
+    }
+    
+    console.log(`   Título Facebook: ${tituloFacebook}`);
+    
+    // Verificar si el canal tiene música de fondo configurada para Facebook
+    let rutaVideoFinal = rutaVideoLocal;
+    
+    if (canal.musica_fondo_facebook_url) {
+      console.log('   🎵 Canal tiene música de fondo para Facebook configurada');
+      
+      // Crear ruta para video con música
+      rutaVideoConMusica = rutaVideoLocal.replace('.mp4', '_facebook_musica.mp4');
+      
+      // Agregar música de fondo
+      await agregarMusicaDeFondo(rutaVideoLocal, canal.musica_fondo_facebook_url, rutaVideoConMusica);
+      
+      rutaVideoFinal = rutaVideoConMusica;
+      console.log(`   ✅ Video con música listo: ${path.basename(rutaVideoFinal)}`);
+    } else {
+      console.log('   ℹ️  No se agregará música de fondo (no configurada en canal)');
     }
 
-    console.log(`   Página: ${canal.nombre}`);
-    console.log(`   Título: ${video.titulo}`);
+    // Verificar credenciales de Facebook
+    const credenciales = canal.credenciales?.facebook;
+    if (!credenciales || !credenciales.page_id || !credenciales.access_token) {
+      throw new Error('Canal no tiene credenciales de Facebook configuradas (necesita page_id y access_token)');
+    }
+
+    const { page_id, access_token } = credenciales;
     
-    // TODO: Implementar con Facebook Graph API
-    // Usar fb-node o llamadas directas a la API
+    // Obtener información del archivo
+    const fileSize = fs.statSync(rutaVideoFinal).size;
+    console.log(`   📊 Tamaño del video: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
     
-    console.warn('⚠️  Publicación en Facebook pendiente de implementar');
-    console.warn('   Usa Facebook Graph API para subir videos');
+    const videoStream = fs.createReadStream(rutaVideoFinal);
+    const videoBuffer = fs.readFileSync(rutaVideoFinal);
     
-    // Retornar ID simulado (eliminar cuando implementes)
-    return null;
+    // Ya tenemos tituloFacebook de arriba
+    const descripcion = video.descripcion || '';
+    
+    console.log(`   📤 Iniciando subida a Facebook...`);
+    console.log(`   🎬 Formato: Reel (9:16, vertical)`);
+    
+    // FASE 1: Inicializar sesión de subida
+    console.log('   [1/3] Iniciando sesión de subida...');
+    const initUrl = `https://graph.facebook.com/v18.0/${page_id}/videos`;
+    const initParams = new URLSearchParams({
+      upload_phase: 'start',
+      access_token: access_token,
+      file_size: fileSize.toString()
+    });
+    
+    const initResponse = await fetch(`${initUrl}?${initParams.toString()}`, {
+      method: 'POST'
+    });
+    
+    if (!initResponse.ok) {
+      const errorData = await initResponse.json();
+      throw new Error(`Error al iniciar sesión de subida: ${JSON.stringify(errorData)}`);
+    }
+    
+    const initData = await initResponse.json();
+    const { video_id, upload_session_id } = initData;
+    
+    if (!video_id || !upload_session_id) {
+      throw new Error('No se recibió video_id o upload_session_id de Facebook');
+    }
+    
+    console.log(`   ✅ Sesión iniciada - video_id: ${video_id}`);
+    
+    // FASE 2: Transferir el archivo de video
+    console.log('   [2/3] Transfiriendo video...');
+    const FormData = require('form-data');
+    const transferForm = new FormData();
+    transferForm.append('upload_phase', 'transfer');
+    transferForm.append('upload_session_id', upload_session_id);
+    transferForm.append('access_token', access_token);
+    transferForm.append('video_file_chunk', videoBuffer, {
+      filename: path.basename(rutaVideoFinal),
+      contentType: 'video/mp4'
+    });
+    
+    const transferResponse = await fetch(initUrl, {
+      method: 'POST',
+      body: transferForm,
+      headers: transferForm.getHeaders()
+    });
+    
+    if (!transferResponse.ok) {
+      const errorData = await transferResponse.json();
+      throw new Error(`Error al transferir video: ${JSON.stringify(errorData)}`);
+    }
+    
+    const transferData = await transferResponse.json();
+    console.log(`   ✅ Video transferido exitosamente`);
+    
+    // FASE 3: Finalizar subida con título y descripción
+    console.log('   [3/3] Finalizando publicación...');
+    const finishParams = new URLSearchParams({
+      upload_phase: 'finish',
+      upload_session_id: upload_session_id,
+      access_token: access_token,
+      title: tituloFacebook,
+      description: descripcion
+    });
+    
+    const finishResponse = await fetch(`${initUrl}?${finishParams.toString()}`, {
+      method: 'POST'
+    });
+    
+    if (!finishResponse.ok) {
+      const errorData = await finishResponse.json();
+      throw new Error(`Error al finalizar publicación: ${JSON.stringify(errorData)}`);
+    }
+    
+    const finishData = await finishResponse.json();
+    console.log(`   ✅ Video publicado exitosamente!`);
+    console.log(`   🔗 Video ID: ${video_id}`);
+    console.log(`   📱 URL: https://facebook.com/${video_id}`);
+    
+    return video_id;
     
   } catch (error) {
     console.error('❌ Error al publicar en Facebook:', error.message);
+    if (error.response) {
+      console.error('   Detalles:', error.response);
+    }
     throw error;
+  } finally {
+    // Limpiar video temporal con música
+    if (rutaVideoConMusica && fs.existsSync(rutaVideoConMusica)) {
+      try {
+        fs.unlinkSync(rutaVideoConMusica);
+        console.log('   🧹 Video temporal con música eliminado');
+      } catch (e) {
+        console.warn('   ⚠️  No se pudo eliminar video temporal:', e.message);
+      }
+    }
   }
 }
 
@@ -1445,8 +1663,8 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial Black,85,&H00FFFFFF,&H000000FF,&H00000000,&HA0000000,-1,0,0,0,100,100,0,0,1,4,2,2,40,40,180,1
-Style: Highlight,Arial Black,95,&H0000FFFF,&H000000FF,&H00000000,&HA0000000,-1,0,0,0,115,115,0,0,1,5,3,2,40,40,180,1
+Style: Default,Arial Black,85,&H00FFFFFF,&H000000FF,&H00000000,&HA0000000,-1,0,0,0,100,100,0,0,1,4,2,2,40,40,330,1
+Style: Highlight,Arial Black,95,&H0000FFFF,&H000000FF,&H00000000,&HA0000000,-1,0,0,0,115,115,0,0,1,5,3,2,40,40,330,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1603,16 +1821,43 @@ function generarVideo(rutasImagenes, rutaAudio, duracionPorImagen, rutaSalida, r
         const duracionFrames = Math.floor(duracionPorImagen * 30);
         const mitadDuracion = duracionFrames / 2;
         
+        // Seleccionar patrón de paneo según el índice (se repite cada 4 imágenes)
+        const patron = PATRONES_PAN[index % PATRONES_PAN.length];
+        console.log(`   📹 Imagen ${index + 1}: Ken Burns + Paneo ${patron.nombre}`);
+        
+        // Calcular movimiento de paneo con easing
+        let paneoX, paneoY;
+        
+        if (patron.factorX !== undefined) {
+          // Paneo horizontal
+          const inicio = patron.factorX;
+          const rango = Math.abs(patron.factorX) * 2;
+          
+          paneoX = `iw/2-(iw/zoom/2) + iw*${inicio}*(1-1/zoom) + iw*${rango}*${patron.direccionX}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},18)),pow((on-${mitadDuracion})/${mitadDuracion},18))`;
+          paneoY = `ih/2-(ih/zoom/2)`;
+        } else {
+          // Paneo vertical
+          const inicio = patron.factorY;
+          const rango = Math.abs(patron.factorY) * 2;
+          
+          paneoX = `iw/2-(iw/zoom/2)`;
+          paneoY = `ih/2-(ih/zoom/2) + ih*${inicio}*(1-1/zoom) + ih*${rango}*${patron.direccionY}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},18)),pow((on-${mitadDuracion})/${mitadDuracion},18))`;
+        }
+        
         // Fórmula de easing para transiciones super rápidas con zoom más dramático
         // setsar=1 fuerza un SAR consistente (1:1) para evitar errores en concat
-        const filtro = `${inputLabel}scale=${VIDEO_CONFIG.width}:${VIDEO_CONFIG.height}:force_original_aspect_ratio=increase,crop=${VIDEO_CONFIG.width}:${VIDEO_CONFIG.height},setsar=1,zoompan=z='if(lte(on,${mitadDuracion}),1.5-0.5*(1-pow(1-on/${mitadDuracion},18)),1.0+0.5*pow((on-${mitadDuracion})/${mitadDuracion},18))':d=${duracionFrames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${VIDEO_CONFIG.width}x${VIDEO_CONFIG.height},fps=30,setpts=PTS-STARTPTS${outputLabel}`;
+        const filtro = `${inputLabel}scale=${VIDEO_CONFIG.width}:${VIDEO_CONFIG.height}:force_original_aspect_ratio=increase,crop=${VIDEO_CONFIG.width}:${VIDEO_CONFIG.height},setsar=1,zoompan=z='if(lte(on,${mitadDuracion}),1.7-0.7*(1-pow(1-on/${mitadDuracion},18)),1.0+0.7*pow((on-${mitadDuracion})/${mitadDuracion},18))':d=${duracionFrames}:x='${paneoX}':y='${paneoY}':s=${VIDEO_CONFIG.width}x${VIDEO_CONFIG.height},fps=30,setpts=PTS-STARTPTS${outputLabel}`;
         
         filtros.push(filtro);
       });
 
       // Concatenar todos los clips
       const concatInputs = rutasImagenes.map((_, index) => `[v${index}]`).join('');
-      filtros.push(`${concatInputs}concat=n=${rutasImagenes.length}:v=1:a=0[outv]`);
+      filtros.push(`${concatInputs}concat=n=${rutasImagenes.length}:v=1:a=0[v_concat]`);
+      
+      // Aplicar Color Grading
+      console.log('🎨 Aplicando color grading profesional...');
+      filtros.push(`[v_concat]eq=saturation=${COLOR_GRADING.saturation}:brightness=${COLOR_GRADING.brightness}:contrast=${COLOR_GRADING.contrast}[outv]`);
 
       const filterComplex = filtros.join(';');
 
