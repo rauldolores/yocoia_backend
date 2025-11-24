@@ -40,6 +40,9 @@ const YOUTUBE_CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET;
 const YOUTUBE_REDIRECT_URI = process.env.YOUTUBE_REDIRECT_URI;
 const FACEBOOK_ACCESS_TOKEN = process.env.FACEBOOK_ACCESS_TOKEN;
 
+// API de generación de guiones
+const GUIONES_API_URL = process.env.GUIONES_API_URL || 'http://localhost:3000/api/guiones-cortos/generar';
+
 // Validar variables de entorno básicas
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('❌ ERROR: Faltan variables de entorno SUPABASE_URL o SUPABASE_KEY');
@@ -1274,6 +1277,7 @@ async function publicarEnFacebook(video, canal, rutaVideoLocal) {
     const transferForm = new FormData();
     transferForm.append('upload_phase', 'transfer');
     transferForm.append('upload_session_id', upload_session_id);
+    transferForm.append('start_offset', '0');  // Inicio del archivo (byte 0)
     transferForm.append('access_token', access_token);
     transferForm.append('video_file_chunk', videoBuffer, {
       filename: path.basename(rutaVideoFinal),
@@ -1565,6 +1569,204 @@ function ordenarImagenesPorEscena(imagenes) {
 
     return escenaA - escenaB;
   });
+}
+
+// =============================================================================
+// GENERACIÓN DE GUIONES DESDE IDEAS
+// =============================================================================
+
+/**
+ * Generar guión usando la API de guiones cortos
+ * @param {string} canalId - UUID del canal
+ * @param {string} idea - Texto de la idea
+ * @param {number} duracionSegundos - Duración deseada (15-90 segundos)
+ * @returns {Promise<Object>} - Guión generado
+ */
+async function generarGuionDesdeAPI(canalId, idea, duracionSegundos = 30) {
+  console.log('🎬 Generando guión desde API...');
+  console.log(`   Canal ID: ${canalId}`);
+  console.log(`   Idea: ${idea.substring(0, 100)}...`);
+  console.log(`   Duración: ${duracionSegundos}s`);
+  
+  try {
+    // Validar parámetros requeridos
+    if (!canalId || !idea) {
+      throw new Error('Parámetros requeridos faltantes: canal_id y/o idea');
+    }
+
+    if (duracionSegundos < 15 || duracionSegundos > 90) {
+      throw new Error('Duración debe estar entre 15 y 90 segundos');
+    }
+
+    // Preparar payload
+    const payload = {
+      canal_id: canalId,
+      idea: idea,
+      duracion_segundos: duracionSegundos
+    };
+
+    // Llamar a la API
+    const response = await fetch(GUIONES_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    // Manejar errores HTTP
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+      
+      if (response.status === 400) {
+        throw new Error(`Error de validación (400): ${errorData.error || errorData.message || 'Datos inválidos'}`);
+      } else if (response.status === 500) {
+        throw new Error(`Error del servidor (500): ${errorData.error || errorData.message || 'Error interno'}`);
+      } else {
+        throw new Error(`Error HTTP ${response.status}: ${errorData.error || errorData.message || 'Error desconocido'}`);
+      }
+    }
+
+    // Parsear respuesta
+    const data = await response.json();
+    
+    if (!data.guion || !data.guion.id) {
+      throw new Error('Respuesta de API inválida: falta guion.id');
+    }
+
+    const guion = data.guion;
+    
+    console.log('✅ Guión generado exitosamente');
+    console.log(`   ID: ${guion.id}`);
+    console.log(`   Título YouTube: ${guion.titulo?.youtube_shorts || 'N/A'}`);
+    console.log(`   Título Facebook: ${guion.titulo?.facebook || 'N/A'}`);
+    console.log(`   Imágenes requeridas: ${guion.imagenes_requeridas || 'N/A'}`);
+    console.log(`   Escenas en storyboard: ${guion.guion_detallado?.storyboard?.length || 0}`);
+    
+    return guion;
+    
+  } catch (error) {
+    console.error('❌ Error al generar guión desde API:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Actualizar idea con el guión generado
+ * @param {string} ideaId - ID de la idea
+ * @param {string} guionId - ID del guión generado
+ */
+async function actualizarIdeaConGuion(ideaId, guionId) {
+  try {
+    const { error } = await supabase
+      .from('ideas')
+      .update({
+        guion_id: guionId,
+        utilizada_at: obtenerTimestampMexico()
+      })
+      .eq('id', ideaId);
+
+    if (error) throw error;
+    
+    console.log(`✅ Idea ${ideaId} actualizada con guión ${guionId}`);
+  } catch (error) {
+    console.error('❌ Error al actualizar idea:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Proceso principal de generación de guiones desde ideas
+ */
+async function generarGuionesDesdeIdeas() {
+  console.log('\n' + '='.repeat(80));
+  console.log('💡 INICIANDO GENERACIÓN DE GUIONES DESDE IDEAS');
+  console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: TIMEZONE }));
+  console.log('='.repeat(80) + '\n');
+
+  let generados = 0;
+  let errores = 0;
+  const MAX_IDEAS_POR_EJECUCION = 10;
+
+  try {
+    // Procesar ideas una por una para evitar que la lista en memoria quede desactualizada
+    for (let i = 0; i < MAX_IDEAS_POR_EJECUCION; i++) {
+      // Consultar la próxima idea pendiente en cada iteración
+      const { data: ideas, error } = await supabase
+        .from('ideas')
+        .select(`
+          id,
+          canal_id,
+          texto,
+          plataformas,
+          potencial_viral,
+          metadata,
+          canales!inner (
+            id,
+            nombre
+          )
+        `)
+        .eq('utilizada', true)
+        .is('guion_id', null)
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      if (error) {
+        console.error('❌ Error al consultar ideas:', error.message);
+        break;
+      }
+
+      // Si no hay más ideas pendientes, terminar
+      if (!ideas || ideas.length === 0) {
+        if (i === 0) {
+          console.log('⚠️  No hay ideas pendientes para generar guiones');
+        }
+        break;
+      }
+
+      const idea = ideas[0];
+      
+      console.log('─'.repeat(80));
+      console.log(`💡 Procesando idea ${i + 1}`);
+      console.log(`   ID: ${idea.id}`);
+      console.log(`   Canal: ${idea.canales?.nombre || 'N/A'}`);
+      console.log(`   Potencial: ${idea.potencial_viral || 'N/A'}`);
+      console.log(`   Texto: ${idea.texto.substring(0, 100)}...`);
+
+      try {
+        // Determinar duración según metadata o usar default
+        const duracionSegundos = idea.metadata?.duracion_segundos || 30;
+        
+        // Generar guión
+        const guion = await generarGuionDesdeAPI(idea.canal_id, idea.texto, duracionSegundos);
+        
+        if (guion && guion.id) {
+          // Actualizar idea con el guión generado
+          await actualizarIdeaConGuion(idea.id, guion.id);
+          generados++;
+          console.log(`✅ Guión generado y vinculado correctamente\n`);
+        } else {
+          console.error('❌ La API no retornó un guión válido\n');
+          errores++;
+        }
+        
+      } catch (error) {
+        console.error(`❌ Error procesando idea ${idea.id}:`, error.message);
+        errores++;
+        console.log('');
+      }
+    }
+
+    console.log('='.repeat(80));
+    console.log('✅ GENERACIÓN DE GUIONES COMPLETADA');
+    console.log(`   Generados: ${generados}`);
+    console.log(`   Errores: ${errores}`);
+    console.log('='.repeat(80) + '\n');
+
+  } catch (error) {
+    console.error('\n❌ ERROR EN GENERACIÓN DE GUIONES:', error.message);
+    console.error('Stack trace:', error.stack);
+  }
 }
 
 // =============================================================================
@@ -2225,6 +2427,11 @@ function iniciarCron() {
   });
   console.log('✅ Cron job 3: Publicación en redes sociales (cada 2 minutos)');
 
+  // Cron 4: Generación de guiones desde ideas - cada 7 minutos
+  cron.schedule('*/7 * * * *', () => {
+    generarGuionesDesdeIdeas();
+  });
+  console.log('✅ Cron job 4: Generación de guiones desde ideas (cada 7 minutos)');
   console.log('\n⏳ Esperando próximas ejecuciones...\n');
 }
 
