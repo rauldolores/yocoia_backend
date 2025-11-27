@@ -230,8 +230,10 @@ async function procesarVideos() {
     crearDirectorios();
 
     // 2. Obtener guiones pendientes de producir video
-    console.log('📋 Consultando guiones con estado "producir_video"...');
-    const guiones = await obtenerGuionesPendientes();
+    // IMPORTANTE: Este cron procesa TODOS los canales, no respeta el filtro
+    console.log('📋 Consultando guiones con estado "producir_video" (TODOS LOS CANALES)...');
+    const filtroDeshabilitado = { enabled: false, channels: { ids: [], names: [] } };
+    const guiones = await obtenerGuionesPendientes(filtroDeshabilitado);
 
     if (!guiones || guiones.length === 0) {
       console.log('⚠️  No se encontraron guiones pendientes de producir video');
@@ -239,7 +241,7 @@ async function procesarVideos() {
       return;
     }
 
-    console.log(`✅ ${guiones.length} guion(es) pendiente(s) encontrado(s)`);
+    console.log(`✅ ${guiones.length} guion(es) pendiente(s) encontrado(s) en todos los canales`);
     console.log('');
 
     // 3. Procesar cada guion

@@ -31,6 +31,14 @@ FILTER_CHANNEL_NAMES=
 - Si se especifica cualquiera → solo se procesan los canales que cumplan los criterios
 - Se puede usar IDs, nombres, o ambos simultáneamente
 
+**⚠️ IMPORTANTE:** El filtro de canales se aplica SOLO a:
+- ✅ Programación de publicaciones
+- ✅ Publicación en redes sociales
+
+**NO se aplica a:**
+- ❌ Generación de videos (siempre procesa TODOS los canales)
+- ❌ Generación de guiones
+
 ---
 
 ### Configuración de Cron Jobs
@@ -43,6 +51,7 @@ CRON_VIDEO_GENERATION_ENABLED=true
 CRON_VIDEO_GENERATION_MINUTES=10
 ```
 - **Descripción:** Genera videos desde guiones pendientes
+- **⚠️ IMPORTANTE:** Procesa TODOS los canales (no respeta el filtro)
 - **Recomendación:** 10-15 minutos
 
 #### Cron Job 2: Programación de Publicaciones
