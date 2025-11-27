@@ -26,7 +26,42 @@ async function publicarEnFacebook(video, canal, rutaVideoLocal) {
       tituloFacebook = 'Video sin título';
     }
     
-    console.log(`   Título Facebook: ${tituloFacebook}`);
+    // Limpiar título
+    tituloFacebook = tituloFacebook.trim();
+    
+    // Facebook también tiene límite de 100 caracteres para mejor visualización
+    const MAX_TITULO_LENGTH = 100;
+    
+    // Si el título es muy largo, intentar quitando hashtags progresivamente
+    if (tituloFacebook.length > MAX_TITULO_LENGTH) {
+      console.log(`   ⚠️  Título muy largo (${tituloFacebook.length} caracteres), ajustando...`);
+      
+      // Extraer todos los hashtags
+      const hashtagRegex = /#\w+/g;
+      const hashtags = tituloFacebook.match(hashtagRegex) || [];
+      
+      // Intentar quitar hashtags del final uno por uno
+      let tituloAjustado = tituloFacebook;
+      for (let i = hashtags.length - 1; i >= 0 && tituloAjustado.length > MAX_TITULO_LENGTH; i--) {
+        const hashtagAQuitar = hashtags[i];
+        // Quitar el hashtag y limpiar espacios extra
+        tituloAjustado = tituloAjustado.replace(hashtagAQuitar, '').replace(/\s+/g, ' ').trim();
+        console.log(`   🗑️  Quitando hashtag: ${hashtagAQuitar} (longitud: ${tituloAjustado.length})`);
+      }
+      
+      // Si aún es muy largo después de quitar todos los hashtags, truncar
+      if (tituloAjustado.length > MAX_TITULO_LENGTH) {
+        console.log(`   ✂️  Aún muy largo (${tituloAjustado.length} caracteres), truncando...`);
+        tituloFacebook = tituloAjustado.substring(0, MAX_TITULO_LENGTH).trim();
+      } else {
+        // Si ya cumple con la longitud después de quitar hashtags, usarlo
+        tituloFacebook = tituloAjustado;
+      }
+      
+      console.log(`   ✅ Título ajustado a ${tituloFacebook.length} caracteres`);
+    }
+    
+    console.log(`   📝 Título Facebook (${tituloFacebook.length} chars): "${tituloFacebook}"`);
     
     // Verificar si el canal tiene música de fondo configurada para Facebook
     let rutaVideoFinal = rutaVideoLocal;

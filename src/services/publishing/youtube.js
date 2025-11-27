@@ -88,18 +88,45 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
 
     // YouTube tiene límite de 100 caracteres para títulos
     const MAX_TITULO_LENGTH = 100;
+    
+    // Si el título es muy largo, intentar quitando hashtags progresivamente
     if (tituloFinal.length > MAX_TITULO_LENGTH) {
-      console.log(`   ⚠️  Título muy largo (${tituloFinal.length} caracteres), truncando a ${MAX_TITULO_LENGTH}...`);
+      console.log(`   ⚠️  Título muy largo (${tituloFinal.length} caracteres), ajustando...`);
       
-      // Si el título incluye #Shorts, asegurarnos de mantenerlo al truncar
-      if (tituloFinal.includes('#Shorts')) {
-        // Truncar dejando espacio para " #Shorts" (8 caracteres)
-        const espacioDisponible = MAX_TITULO_LENGTH - 8;
-        const tituloSinShorts = tituloFinal.replace(' #Shorts', '').trim();
-        tituloFinal = tituloSinShorts.substring(0, espacioDisponible).trim() + ' #Shorts';
-      } else {
-        tituloFinal = tituloFinal.substring(0, MAX_TITULO_LENGTH).trim();
+      // Extraer todos los hashtags (excepto #Shorts que queremos mantener)
+      const hashtagRegex = /#\w+/g;
+      const hashtags = tituloFinal.match(hashtagRegex) || [];
+      const hashtagsSinShorts = hashtags.filter(tag => tag !== '#Shorts');
+      
+      // Intentar quitar hashtags del final uno por uno
+      let tituloAjustado = tituloFinal;
+      for (let i = hashtagsSinShorts.length - 1; i >= 0 && tituloAjustado.length > MAX_TITULO_LENGTH; i--) {
+        const hashtagAQuitar = hashtagsSinShorts[i];
+        // Quitar el hashtag y limpiar espacios extra
+        tituloAjustado = tituloAjustado.replace(hashtagAQuitar, '').replace(/\s+/g, ' ').trim();
+        console.log(`   🗑️  Quitando hashtag: ${hashtagAQuitar} (longitud: ${tituloAjustado.length})`);
       }
+      
+      // Si aún es muy largo después de quitar todos los hashtags, truncar
+      if (tituloAjustado.length > MAX_TITULO_LENGTH) {
+        console.log(`   ✂️  Aún muy largo (${tituloAjustado.length} caracteres), truncando...`);
+        
+        // Si el título incluye #Shorts, mantenerlo al truncar
+        if (tituloAjustado.includes('#Shorts')) {
+          // Truncar dejando espacio para " #Shorts" (8 caracteres)
+          const espacioDisponible = MAX_TITULO_LENGTH - 8;
+          const tituloSinShorts = tituloAjustado.replace(' #Shorts', '').trim();
+          tituloFinal = tituloSinShorts.substring(0, espacioDisponible).trim() + ' #Shorts';
+        } else {
+          // Truncar directamente si no tiene #Shorts
+          tituloFinal = tituloAjustado.substring(0, MAX_TITULO_LENGTH).trim();
+        }
+      } else {
+        // Si ya cumple con la longitud después de quitar hashtags, usarlo
+        tituloFinal = tituloAjustado;
+      }
+      
+      console.log(`   ✅ Título ajustado a ${tituloFinal.length} caracteres`);
     }
 
     console.log(`   📝 Título final (${tituloFinal.length} chars): "${tituloFinal}"`);
