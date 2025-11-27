@@ -117,10 +117,44 @@ const PATRONES_PAN = [
 // CONFIGURACIÓN DE PROGRAMACIÓN
 // =============================================================================
 
-const HORAS_PUBLICACION = [9, 12, 15, 18, 21];
-const MINUTOS_DESFACE_MIN = 0;
-const MINUTOS_DESFACE_MAX = 45;
-const TIMEZONE = 'America/Mexico_City';
+/**
+ * Cargar horas de publicación desde variable de entorno
+ * Formato: números separados por comas (ej: "9,12,15,18,21")
+ */
+function cargarHorasPublicacion() {
+  const horasEnv = process.env.HORAS_PUBLICACION;
+  
+  if (!horasEnv || horasEnv.trim() === '') {
+    // Valores por defecto
+    return [9, 12, 15, 18, 21];
+  }
+  
+  try {
+    const horas = horasEnv.split(',').map(h => {
+      const hora = parseInt(h.trim());
+      if (isNaN(hora) || hora < 0 || hora > 23) {
+        throw new Error(`Hora inválida: ${h}`);
+      }
+      return hora;
+    });
+    
+    if (horas.length === 0) {
+      console.warn('⚠️  HORAS_PUBLICACION vacío, usando valores por defecto');
+      return [9, 12, 15, 18, 21];
+    }
+    
+    return horas.sort((a, b) => a - b); // Ordenar de menor a mayor
+  } catch (error) {
+    console.error('❌ Error al parsear HORAS_PUBLICACION:', error.message);
+    console.warn('⚠️  Usando horas por defecto: 9,12,15,18,21');
+    return [9, 12, 15, 18, 21];
+  }
+}
+
+const HORAS_PUBLICACION = cargarHorasPublicacion();
+const MINUTOS_DESFACE_MIN = parseInt(process.env.MINUTOS_DESFACE_MIN) || 0;
+const MINUTOS_DESFACE_MAX = parseInt(process.env.MINUTOS_DESFACE_MAX) || 45;
+const TIMEZONE = process.env.TIMEZONE || 'America/Mexico_City';
 
 // =============================================================================
 // FILTRO DE CANALES

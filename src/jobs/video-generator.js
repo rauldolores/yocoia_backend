@@ -54,7 +54,7 @@ async function procesarGuionIndividual(guion) {
     
     // 1. Obtener media assets del guion
     console.log('🖼️  Consultando media assets...');
-    let { imagenes, audio } = await obtenerMediaAssets(guion.id);
+    let { imagenes, videos, medias, audio } = await obtenerMediaAssets(guion.id);
 
     // 2. Si no hay audio, generarlo con ElevenLabs
     if (!audio || !audio.url) {
@@ -88,17 +88,17 @@ async function procesarGuionIndividual(guion) {
       console.log(`✅ Audio encontrado: ${audio.url}`);
     }
 
-    // 3. Validar que existan imágenes
-    if (!imagenes || imagenes.length === 0) {
-      console.error('❌ ERROR: No se encontraron imágenes para este guion');
+    // 3. Validar que existan medias (imágenes o videos)
+    if (!medias || medias.length === 0) {
+      console.error('❌ ERROR: No se encontraron imágenes ni videos para este guion');
       return;
     }
-    console.log(`✅ ${imagenes.length} imágenes encontradas`);
+    console.log(`✅ ${imagenes.length} imágenes y ${videos.length} videos encontrados (${medias.length} medias totales)`);
 
-    // 4. Ordenar imágenes por escena
-    console.log('🔢 Ordenando imágenes por escena...');
-    const imagenesOrdenadas = ordenarImagenesPorEscena(imagenes);
-    console.log('✅ Imágenes ordenadas correctamente');
+    // 4. Ordenar medias por escena
+    console.log('🔢 Ordenando medias por escena...');
+    const mediasOrdenadas = ordenarImagenesPorEscena(medias);
+    console.log(`✅ Orden establecido: ${mediasOrdenadas.length} medias`);
 
     // 5. Descargar audio
     console.log('⬇️  Descargando audio...');
@@ -111,25 +111,26 @@ async function procesarGuionIndividual(guion) {
     const duracionAudio = await obtenerDuracionAudio(rutaAudioLocal);
     console.log(`✅ Duración del audio: ${duracionAudio.toFixed(2)} segundos`);
 
-    // 7. Calcular duración por imagen
-    const duracionPorImagen = duracionAudio / imagenesOrdenadas.length;
-    console.log(`✅ Duración por imagen: ${duracionPorImagen.toFixed(2)} segundos`);
+    // 7. Calcular duración base por segmento
+    const duracionPorSegmento = duracionAudio / mediasOrdenadas.length;
+    console.log(`✅ Duración base por segmento: ${duracionPorSegmento.toFixed(2)} segundos`);
 
-    // 8. Descargar todas las imágenes
-    console.log('⬇️  Descargando imágenes...');
-    const rutasImagenesLocales = [];
+    // 8. Descargar todas las medias (imágenes y videos)
+    console.log('⬇️  Descargando medias...');
+    const rutasMediasLocales = [];
 
-    for (let i = 0; i < imagenesOrdenadas.length; i++) {
-      const imagen = imagenesOrdenadas[i];
-      const escena = imagen.metadata?.escena || 'sin_escena';
-      const rutaLocal = path.join(tempDirGuion, `imagen_${i}_escena_${escena}.jpg`);
+    for (let i = 0; i < mediasOrdenadas.length; i++) {
+      const media = mediasOrdenadas[i];
+      const escena = media.metadata?.escena || 'sin_escena';
+      const extension = media.tipo === 'video' ? 'mp4' : 'jpg';
+      const rutaLocal = path.join(tempDirGuion, `${media.tipo}_${i}_escena_${escena}.${extension}`);
       
-      await descargarArchivo(imagen.url, rutaLocal);
-      rutasImagenesLocales.push(rutaLocal);
-      console.log(`   ✓ Imagen ${i + 1}/${imagenesOrdenadas.length} descargada (escena ${escena})`);
+      await descargarArchivo(media.url, rutaLocal);
+      rutasMediasLocales.push(rutaLocal);
+      console.log(`   ✓ ${media.tipo} ${i + 1}/${mediasOrdenadas.length} descargado (escena ${escena})`);
     }
 
-    console.log('✅ Todas las imágenes descargadas');
+    console.log('✅ Todas las medias descargadas');
 
     // 9. Transcribir audio con Whisper
     console.log('\n📝 === GENERANDO SUBTÍTULOS ===');
@@ -143,15 +144,17 @@ async function procesarGuionIndividual(guion) {
     await generarArchivoASS(subtitulos, rutaASS);
 
     // 12. Generar video con subtítulos
+    // Nota: generarVideo() ahora soporta mezcla de imágenes y videos
+    // Aplica Ken Burns a ambos tipos, con duración híbrida para videos
     console.log('\n🎬 === GENERANDO VIDEO CON SUBTÍTULOS ===');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const nombreVideo = `video_${guion.id}_${timestamp}.mp4`;
     const rutaVideoSalida = path.join(EXPORTS_DIR, nombreVideo);
 
     await generarVideo(
-      rutasImagenesLocales,
+      rutasMediasLocales, // Ahora soporta imágenes (.jpg, .png) y videos (.mp4, .mov, etc)
       rutaAudioLocal,
-      duracionPorImagen,
+      duracionPorSegmento,
       rutaVideoSalida,
       rutaASS
     );

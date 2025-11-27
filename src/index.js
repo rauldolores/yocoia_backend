@@ -10,13 +10,36 @@
 
 const cron = require('node-cron');
 const { limpiarTemp } = require('./utils/file');
-const { CRON_CONFIG, CHANNEL_FILTER, supabase } = require('./config');
+const { CRON_CONFIG, CHANNEL_FILTER, HORAS_PUBLICACION, MINUTOS_DESFACE_MIN, MINUTOS_DESFACE_MAX, TIMEZONE, supabase } = require('./config');
 const {
   procesarVideos,
   programarPublicaciones,
   publicarEnRedesSociales,
   generarGuionesDesdeIdeas
 } = require('./jobs');
+
+/**
+ * Mostrar configuración de ventanas de programación
+ */
+function mostrarConfiguracionProgramacion() {
+  console.log('\n' + '='.repeat(80));
+  console.log('⏰ CONFIGURACIÓN DE VENTANAS DE PROGRAMACIÓN');
+  console.log('='.repeat(80));
+  
+  console.log(`🌍 Zona horaria: ${TIMEZONE}`);
+  console.log(`📅 Horas de publicación: ${HORAS_PUBLICACION.join(', ')}`);
+  console.log(`🎲 Desface aleatorio: ${MINUTOS_DESFACE_MIN}-${MINUTOS_DESFACE_MAX} minutos`);
+  
+  console.log('\n📋 Ventanas de publicación:');
+  HORAS_PUBLICACION.forEach(hora => {
+    const horaFormatted = hora.toString().padStart(2, '0');
+    const minutoMin = MINUTOS_DESFACE_MIN.toString().padStart(2, '0');
+    const minutoMax = MINUTOS_DESFACE_MAX.toString().padStart(2, '0');
+    console.log(`   • ${horaFormatted}:${minutoMin} - ${horaFormatted}:${minutoMax}`);
+  });
+  
+  console.log('\n' + '='.repeat(80) + '\n');
+}
 
 /**
  * Mostrar información de canales que se están procesando
@@ -161,6 +184,9 @@ async function ejecutarProcesosIniciales() {
  * Función principal
  */
 async function main() {
+  // Mostrar configuración de programación
+  mostrarConfiguracionProgramacion();
+  
   // Mostrar información de canales procesados
   await mostrarCanalesProcesados();
   

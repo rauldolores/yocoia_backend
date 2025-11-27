@@ -6,51 +6,131 @@ const fsPromises = require('fs').promises;
 const path = require('path');
 
 /**
+ * Detectar si un archivo es video
+ * @param {string} rutaArchivo - Ruta del archivo
+ * @returns {boolean}
+ */
+function esVideo(rutaArchivo) {
+  const extension = path.extname(rutaArchivo).toLowerCase();
+  return ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.m4v'].includes(extension);
+}
+
+/**
+ * Detectar si un archivo es imagen
+ * @param {string} rutaArchivo - Ruta del archivo
+ * @returns {boolean}
+ */
+function esImagen(rutaArchivo) {
+  const extension = path.extname(rutaArchivo).toLowerCase();
+  return ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'].includes(extension);
+}
+
+/**
+ * Obtener duración de un video
+ * @param {string} rutaVideo - Ruta del video
+ * @returns {Promise<number>} - Duración en segundos
+ */
+async function obtenerDuracionVideo(rutaVideo) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(rutaVideo, (err, metadata) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(metadata.format.duration || 0);
+      }
+    });
+  });
+}
+
+/**
  * Generar video con FFmpeg usando efecto Ken Burns, panning y color grading
- * @param {Array} rutasImagenes - Array de rutas de imágenes ordenadas
+ * Soporta mezcla de videos e imágenes
+ * @param {Array} rutasMedias - Array de rutas de imágenes/videos ordenadas
  * @param {string} rutaAudio - Ruta del archivo de audio
- * @param {number} duracionPorImagen - Duración en segundos para cada imagen
+ * @param {number} duracionPorSegmento - Duración base en segundos para cada segmento
  * @param {string} rutaSalida - Ruta del video de salida
  * @param {string} rutaASS - Ruta del archivo de subtítulos ASS (opcional)
  * @returns {Promise<string>} - Ruta del video generado
  */
-async function generarVideo(rutasImagenes, rutaAudio, duracionPorImagen, rutaSalida, rutaASS = null) {
+async function generarVideo(rutasMedias, rutaAudio, duracionPorSegmento, rutaSalida, rutaASS = null) {
   return new Promise(async (resolve, reject) => {
     try {
       console.log('\n🔍 === INFORMACIÓN DE DEPURACIÓN ===');
-      console.log('🎬 Iniciando generación de video...');
-      console.log(`   - Total de imágenes: ${rutasImagenes.length}`);
-      console.log(`   - Duración por imagen: ${duracionPorImagen.toFixed(2)}s`);
-      console.log(`   - Duración total estimada: ${(rutasImagenes.length * duracionPorImagen).toFixed(2)}s`);
+      console.log('🎬 Iniciando generación de video con soporte de videos e imágenes...');
+      console.log(`   - Total de medias: ${rutasMedias.length}`);
+      console.log(`   - Duración base por segmento: ${duracionPorSegmento.toFixed(2)}s`);
       
-      // Verificar imágenes
-      console.log('\n📸 Verificando imágenes:');
-      for (let i = 0; i < rutasImagenes.length; i++) {
-        const ruta = rutasImagenes[i];
-        const existe = fs.existsSync(ruta);
-        if (existe) {
-          const stats = fs.statSync(ruta);
-          console.log(`   [${i}] ✅ ${path.basename(ruta)} (${(stats.size / 1024).toFixed(2)} KB)`);
-          
-          // Intentar obtener dimensiones de la imagen usando ffprobe
+      // Configuración de video
+      const fps = VIDEO_CONFIG.fps || 30;
+      const width = VIDEO_CONFIG.width || 1080;
+      const height = VIDEO_CONFIG.height || 1920;
+      
+      // Analizar cada media y determinar su duración real
+      const mediasInfo = [];
+      for (let i = 0; i < rutasMedias.length; i++) {
+        const rutaMedia = rutasMedias[i];
+        const info = {
+          ruta: rutaMedia,
+          esVideo: esVideo(rutaMedia),
+          esImagen: esImagen(rutaMedia),
+          duracionSegmento: duracionPorSegmento,
+          necesitaRecorte: false
+        };
+
+        if (info.esVideo) {
           try {
-            const probe = await new Promise((res, rej) => {
-              ffmpeg.ffprobe(ruta, (err, metadata) => {
-                if (err) rej(err);
-                else res(metadata);
-              });
-            });
-            const videoStream = probe.streams.find(s => s.codec_type === 'video');
-            if (videoStream) {
-              console.log(`       Resolución: ${videoStream.width}x${videoStream.height}`);
-              console.log(`       Codec: ${videoStream.codec_name}`);
-            }
-          } catch (probeErr) {
-            console.warn(`       ⚠️  No se pudo obtener metadata: ${probeErr.message}`);
+            const duracionOriginal = await obtenerDuracionVideo(rutaMedia);
+            // Estrategia híbrida: usar duración original si <= duracionPorSegmento, sino recortar
+            info.duracionSegmento = Math.min(duracionOriginal, duracionPorSegmento);
+            info.necesitaRecorte = duracionOriginal > duracionPorSegmento;
+            console.log(`   [${i}] 🎥 VIDEO: ${path.basename(rutaMedia)}`);
+            console.log(`       Duración original: ${duracionOriginal.toFixed(2)}s`);
+            console.log(`       Duración a usar: ${info.duracionSegmento.toFixed(2)}s ${info.necesitaRecorte ? '(recortado)' : '(completo)'}`);
+          } catch (error) {
+            console.error(`       ⚠️ Error al obtener duración:`, error.message);
+            // Si falla, usar duración base
+            info.duracionSegmento = duracionPorSegmento;
           }
-        } else {
-          console.error(`   [${i}] ❌ NO EXISTE: ${ruta}`);
-          throw new Error(`Imagen no encontrada: ${ruta}`);
+        } else if (info.esImagen) {
+          console.log(`   [${i}] 🖼️  IMAGEN: ${path.basename(rutaMedia)}`);
+          console.log(`       Duración: ${duracionPorSegmento}s`);
+        }
+
+        mediasInfo.push(info);
+      }
+      
+      const duracionTotalEstimada = mediasInfo.reduce((sum, m) => sum + m.duracionSegmento, 0);
+      console.log(`   - Duración total estimada: ${duracionTotalEstimada.toFixed(2)}s`);
+      
+      // Verificar archivos de media
+      console.log('\n📁 Verificando archivos de media:');
+      for (let i = 0; i < mediasInfo.length; i++) {
+        const info = mediasInfo[i];
+        const existe = fs.existsSync(info.ruta);
+        if (!existe) {
+          console.error(`   [${i}] ❌ NO EXISTE: ${info.ruta}`);
+          throw new Error(`Archivo no encontrado: ${info.ruta}`);
+        }
+        
+        const stats = fs.statSync(info.ruta);
+        const tipo = info.esVideo ? '🎥 VIDEO' : '🖼️  IMAGEN';
+        console.log(`   [${i}] ✅ ${tipo}: ${path.basename(info.ruta)} (${(stats.size / 1024).toFixed(2)} KB)`);
+        
+        // Obtener metadata usando ffprobe
+        try {
+          const probe = await new Promise((res, rej) => {
+            ffmpeg.ffprobe(info.ruta, (err, metadata) => {
+              if (err) rej(err);
+              else res(metadata);
+            });
+          });
+          const videoStream = probe.streams.find(s => s.codec_type === 'video');
+          if (videoStream) {
+            console.log(`       Resolución: ${videoStream.width}x${videoStream.height}`);
+            console.log(`       Codec: ${videoStream.codec_name}`);
+          }
+        } catch (probeErr) {
+          console.warn(`       ⚠️  No se pudo obtener metadata: ${probeErr.message}`);
         }
       }
       
@@ -103,47 +183,57 @@ async function generarVideo(rutasImagenes, rutaAudio, duracionPorImagen, rutaSal
       // Crear filtros complejos para efecto Ken Burns
       const filtros = [];
 
-      // Generar filtros Ken Burns para cada imagen
-      rutasImagenes.forEach((ruta, index) => {
+      // Generar filtros para cada media (Ken Burns para imágenes, scale+crop para videos)
+      mediasInfo.forEach((info, index) => {
         const inputLabel = `[${index}:v]`;
         const outputLabel = `[v${index}]`;
         
-        const duracionFrames = Math.floor(duracionPorImagen * 30);
-        const mitadDuracion = duracionFrames / 2;
-        
-        // Seleccionar patrón de paneo según el índice (se repite cada 4 imágenes)
-        const patron = PATRONES_PAN[index % PATRONES_PAN.length];
-        console.log(`   📹 Imagen ${index + 1}: Ken Burns + Paneo ${patron.nombre}`);
-        
-        // Calcular movimiento de paneo con easing
-        let paneoX, paneoY;
-        
-        if (patron.factorX !== undefined) {
-          // Paneo horizontal
-          const inicio = patron.factorX;
-          const rango = Math.abs(patron.factorX) * 2;
+        if (info.esImagen) {
+          // IMÁGENES: Aplicar Ken Burns con zoompan
+          const duracionFrames = Math.floor(info.duracionSegmento * fps);
+          const mitadDuracion = duracionFrames / 2;
           
-          paneoX = `iw/2-(iw/zoom/2) + iw*${inicio}*(1-1/zoom) + iw*${rango}*${patron.direccionX}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},18)),pow((on-${mitadDuracion})/${mitadDuracion},18))`;
-          paneoY = `ih/2-(ih/zoom/2)`;
-        } else {
-          // Paneo vertical
-          const inicio = patron.factorY;
-          const rango = Math.abs(patron.factorY) * 2;
+          // Seleccionar patrón de paneo según el índice (se repite cada 4 medias)
+          const patron = PATRONES_PAN[index % PATRONES_PAN.length];
+          console.log(`   🖼️  Imagen ${index + 1}: Ken Burns + Paneo ${patron.nombre} (${info.duracionSegmento.toFixed(2)}s)`);
           
-          paneoX = `iw/2-(iw/zoom/2)`;
-          paneoY = `ih/2-(ih/zoom/2) + ih*${inicio}*(1-1/zoom) + ih*${rango}*${patron.direccionY}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},18)),pow((on-${mitadDuracion})/${mitadDuracion},18))`;
+          // Calcular movimiento de paneo con easing
+          let paneoX, paneoY;
+          
+          if (patron.factorX !== undefined) {
+            // Paneo horizontal
+            const inicio = patron.factorX;
+            const rango = Math.abs(patron.factorX) * 2;
+            
+            paneoX = `iw/2-(iw/zoom/2) + iw*${inicio}*(1-1/zoom) + iw*${rango}*${patron.direccionX}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},18)),pow((on-${mitadDuracion})/${mitadDuracion},18))`;
+            paneoY = `ih/2-(ih/zoom/2)`;
+          } else {
+            // Paneo vertical
+            const inicio = patron.factorY;
+            const rango = Math.abs(patron.factorY) * 2;
+            
+            paneoX = `iw/2-(iw/zoom/2)`;
+            paneoY = `ih/2-(ih/zoom/2) + ih*${inicio}*(1-1/zoom) + ih*${rango}*${patron.direccionY}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},18)),pow((on-${mitadDuracion})/${mitadDuracion},18))`;
+          }
+          
+          // Fórmula de easing para transiciones con zoom dramático
+          const filtro = `${inputLabel}scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,zoompan=z='if(lte(on,${mitadDuracion}),1.7-0.7*(1-pow(1-on/${mitadDuracion},18)),1.0+0.7*pow((on-${mitadDuracion})/${mitadDuracion},18))':d=${duracionFrames}:x='${paneoX}':y='${paneoY}':s=${width}x${height},fps=${fps},setpts=PTS-STARTPTS${outputLabel}`;
+          
+          filtros.push(filtro);
+        } else if (info.esVideo) {
+          // VIDEOS: Solo scale, crop y normalización (sin zoompan para preservar movimiento)
+          console.log(`   🎥 Video ${index + 1}: Scale + Crop (preservando movimiento) (${info.duracionSegmento.toFixed(2)}s)`);
+          
+          // Para videos: scale, crop, normalizar fps y setsar
+          const filtro = `${inputLabel}scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,fps=${fps},setpts=PTS-STARTPTS${outputLabel}`;
+          
+          filtros.push(filtro);
         }
-        
-        // Fórmula de easing para transiciones super rápidas con zoom más dramático
-        // setsar=1 fuerza un SAR consistente (1:1) para evitar errores en concat
-        const filtro = `${inputLabel}scale=${VIDEO_CONFIG.width}:${VIDEO_CONFIG.height}:force_original_aspect_ratio=increase,crop=${VIDEO_CONFIG.width}:${VIDEO_CONFIG.height},setsar=1,zoompan=z='if(lte(on,${mitadDuracion}),1.7-0.7*(1-pow(1-on/${mitadDuracion},18)),1.0+0.7*pow((on-${mitadDuracion})/${mitadDuracion},18))':d=${duracionFrames}:x='${paneoX}':y='${paneoY}':s=${VIDEO_CONFIG.width}x${VIDEO_CONFIG.height},fps=30,setpts=PTS-STARTPTS${outputLabel}`;
-        
-        filtros.push(filtro);
       });
 
       // Concatenar todos los clips
-      const concatInputs = rutasImagenes.map((_, index) => `[v${index}]`).join('');
-      filtros.push(`${concatInputs}concat=n=${rutasImagenes.length}:v=1:a=0[v_concat]`);
+      const concatInputs = mediasInfo.map((_, index) => `[v${index}]`).join('');
+      filtros.push(`${concatInputs}concat=n=${mediasInfo.length}:v=1:a=0[v_concat]`);
       
       // Aplicar Color Grading
       console.log('🎨 Aplicando color grading profesional...');
@@ -154,9 +244,21 @@ async function generarVideo(rutasImagenes, rutaAudio, duracionPorImagen, rutaSal
       // Crear comando FFmpeg para video base
       let comando = ffmpeg();
 
-      // Agregar todas las imágenes como inputs
-      rutasImagenes.forEach(ruta => {
-        comando = comando.input(ruta);
+      // Agregar todas las medias como inputs
+      // Para imágenes: el zoompan maneja la duración con el parámetro 'd'
+      // Para videos: aplicamos -t si necesitan recorte
+      mediasInfo.forEach(info => {
+        if (info.esImagen) {
+          // Imágenes: agregar sin opciones, zoompan controla la duración
+          comando = comando.input(info.ruta);
+        } else if (info.esVideo) {
+          // Videos: si necesita recorte, aplicar -t para duración
+          if (info.necesitaRecorte) {
+            comando = comando.input(info.ruta).inputOptions(['-t', info.duracionSegmento.toString()]);
+          } else {
+            comando = comando.input(info.ruta);
+          }
+        }
       });
 
       // Agregar audio
@@ -168,7 +270,7 @@ async function generarVideo(rutasImagenes, rutaAudio, duracionPorImagen, rutaSal
           .complexFilter(filterComplex)
           .outputOptions([
             '-map [outv]',
-            `-map ${rutasImagenes.length}:a`,
+            `-map ${mediasInfo.length}:a`,
             '-c:v ' + VIDEO_CONFIG.codec,
             '-preset ' + VIDEO_CONFIG.preset,
             '-crf ' + VIDEO_CONFIG.crf,

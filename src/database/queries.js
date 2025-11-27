@@ -70,15 +70,17 @@ async function obtenerMediaAssets(guionId) {
       .from('media_assets')
       .select('id, tipo, url, metadata')
       .eq('guion_id', guionId)
-      .in('tipo', ['imagen', 'audio']);
+      .in('tipo', ['imagen', 'video', 'audio']);
 
     if (error) throw error;
 
-    // Separar imágenes y audio
+    // Separar imágenes, videos y audio
     const imagenes = data.filter(item => item.tipo === 'imagen');
+    const videos = data.filter(item => item.tipo === 'video');
+    const medias = [...imagenes, ...videos]; // Combinar imágenes y videos
     const audio = data.find(item => item.tipo === 'audio');
 
-    return { imagenes, audio };
+    return { imagenes, videos, medias, audio };
   } catch (error) {
     console.error('❌ Error al obtener media assets:', error.message);
     throw error;
