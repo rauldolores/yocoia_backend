@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { agregarMusicaDeFondo } = require('../audio');
+const { FACEBOOK_ACCESS_TOKEN } = require('../../config');
 
 /**
  * Publicar video en Facebook con API Graph v18.0 (upload resumible en 3 fases)
@@ -47,11 +48,20 @@ async function publicarEnFacebook(video, canal, rutaVideoLocal) {
 
     // Verificar credenciales de Facebook
     const credenciales = canal.credenciales?.facebook;
+    
+    console.log(`   🔍 DEBUG credenciales: ${JSON.stringify(credenciales, null, 2)}`);
+    console.log(`   🔍 DEBUG canal.page_id: ${canal.page_id}`);
+    console.log(`   🔍 DEBUG FACEBOOK_ACCESS_TOKEN disponible: ${Boolean(FACEBOOK_ACCESS_TOKEN)}`);
+    
     if (!credenciales || !credenciales.page_id || !credenciales.access_token) {
-      throw new Error('Canal no tiene credenciales de Facebook configuradas (necesita page_id y access_token)');
+      throw new Error('Canal no tiene credenciales de Facebook configuradas (necesita page_id y access_token en canal.credenciales.facebook)');
     }
 
     const { page_id, access_token } = credenciales;
+
+    console.log(`   🔐 page_id: ${page_id}`);
+    console.log(`   🔐 access_token: ${access_token}`);
+    console.log(`   🔐 Token length: ${access_token.length} caracteres`);
     
     // Obtener información del archivo
     const fileSize = fs.statSync(rutaVideoFinal).size;
@@ -92,25 +102,46 @@ async function publicarEnFacebook(video, canal, rutaVideoLocal) {
     
     // FASE 2: Transferir el archivo de video
     console.log('   [2/3] Transfiriendo video...');
+    
     const FormData = require('form-data');
+    const https = require('https');
+    const { URL } = require('url');
+    
     const transferForm = new FormData();
     transferForm.append('upload_phase', 'transfer');
     transferForm.append('upload_session_id', upload_session_id);
-    transferForm.append('start_offset', '0');  // Inicio del archivo (byte 0)
+    transferForm.append('start_offset', '0');
     transferForm.append('access_token', access_token);
     transferForm.append('video_file_chunk', videoBuffer, {
       filename: path.basename(rutaVideoFinal),
       contentType: 'video/mp4'
     });
-    
-    const transferResponse = await fetch(initUrl, {
-      method: 'POST',
-      body: transferForm,
-      headers: transferForm.getHeaders()
+
+    // Usar el método submit() de form-data en lugar de fetch()
+    // Esto maneja correctamente el streaming y los headers
+    const transferResponse = await new Promise((resolve, reject) => {
+      const parsedUrl = new URL(initUrl);
+      
+      transferForm.submit({
+        host: parsedUrl.host,
+        path: parsedUrl.pathname,
+        protocol: parsedUrl.protocol,
+        method: 'POST'
+      }, (err, res) => {
+        if (err) return reject(err);
+        
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          res.body = data;
+          resolve(res);
+        });
+        res.on('error', reject);
+      });
     });
     
-    if (!transferResponse.ok) {
-      const errorData = await transferResponse.json();
+    if (transferResponse.statusCode !== 200) {
+      const errorData = JSON.parse(transferResponse.body);
       throw new Error(`Error al transferir video: ${JSON.stringify(errorData)}`);
     }
     

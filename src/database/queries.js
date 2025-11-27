@@ -165,10 +165,10 @@ async function obtenerVideosListosParaPublicar(filtroCanales = null) {
         youtube_video_id,
         facebook_post_id,
         metadata,
-        guiones (
+        guiones!inner (
           id,
           canal_id,
-          canales (
+          canales!inner (
             id,
             nombre,
             credenciales,
@@ -186,9 +186,10 @@ async function obtenerVideosListosParaPublicar(filtroCanales = null) {
     
     // Filtrar videos que aún tienen plataformas pendientes de publicar
     // Un video se considera "listo" si le falta YouTube o Facebook (o ambos)
+    // Consideramos NULL o string vacío como "no publicado"
     let videosPendientes = (data || []).filter(video => {
-      const tieneYouTube = video.youtube_video_id != null;
-      const tieneFacebook = video.facebook_post_id != null;
+      const tieneYouTube = video.youtube_video_id != null && video.youtube_video_id.trim() !== '';
+      const tieneFacebook = video.facebook_post_id != null && video.facebook_post_id.trim() !== '';
       
       // Si ambos ya están publicados, omitir este video
       if (tieneYouTube && tieneFacebook) {

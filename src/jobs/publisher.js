@@ -46,12 +46,12 @@ async function publicarEnRedesSociales() {
 
       console.log('─'.repeat(80));
       console.log(`📹 Publicando: ${video.titulo}`);
-      console.log(`   Canal: ${canal.nombre}`);
+      console.log(`   Canal: ${canal.nombre} (ID: ${canal.id})`);
       console.log(`   Programado: ${new Date(video.publicacion_programada_at).toLocaleString('es-MX')}`);
       
-      // Verificar qué plataformas ya están publicadas
-      const yaPublicadoYouTube = video.youtube_video_id != null;
-      const yaPublicadoFacebook = video.facebook_post_id != null;
+      // Verificar qué plataformas ya están publicadas (NULL o string vacío = no publicado)
+      const yaPublicadoYouTube = video.youtube_video_id != null && video.youtube_video_id.trim() !== '';
+      const yaPublicadoFacebook = video.facebook_post_id != null && video.facebook_post_id.trim() !== '';
       
       if (yaPublicadoYouTube) {
         console.log('   ⏭️  YouTube: Ya publicado (ID: ' + video.youtube_video_id + ')');
