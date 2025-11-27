@@ -127,35 +127,48 @@ const TIMEZONE = 'America/Mexico_City';
 // =============================================================================
 
 /**
- * Carga la configuración de filtrado de canales desde channel-filter.json
+ * Cargar configuración de filtrado de canales desde variables de entorno
  * @returns {Object} Configuración de filtrado { enabled, channels: { ids, names } }
  */
 function cargarFiltroCanales() {
-  try {
-    const configPath = path.join(__dirname, 'channel-filter.json');
-    const configData = fs.readFileSync(configPath, 'utf8');
-    const config = JSON.parse(configData);
-    
-    // Validar estructura
-    if (typeof config.enabled !== 'boolean') {
-      console.warn('⚠️ Advertencia: channel-filter.json no tiene campo "enabled" válido. Se procesarán todos los canales.');
-      return { enabled: false, channels: { ids: [], names: [] } };
-    }
-    
-    if (!config.channels || !Array.isArray(config.channels.ids) || !Array.isArray(config.channels.names)) {
-      console.warn('⚠️ Advertencia: channel-filter.json tiene estructura inválida. Se procesarán todos los canales.');
-      return { enabled: false, channels: { ids: [], names: [] } };
-    }
-    
-    return config;
-  } catch (error) {
-    console.warn('⚠️ Advertencia: No se pudo cargar channel-filter.json:', error.message);
-    console.warn('Se procesarán todos los canales por defecto.');
-    return { enabled: false, channels: { ids: [], names: [] } };
-  }
+  const filterIds = process.env.FILTER_CHANNEL_IDS || '';
+  const filterNames = process.env.FILTER_CHANNEL_NAMES || '';
+  
+  const ids = filterIds.trim() ? filterIds.split(',').map(id => id.trim()).filter(id => id) : [];
+  const names = filterNames.trim() ? filterNames.split(',').map(name => name.trim()).filter(name => name) : [];
+  
+  const enabled = ids.length > 0 || names.length > 0;
+  
+  return {
+    enabled,
+    channels: { ids, names }
+  };
 }
 
 const CHANNEL_FILTER = cargarFiltroCanales();
+
+// =============================================================================
+// CONFIGURACIÓN DE CRON JOBS
+// =============================================================================
+
+const CRON_CONFIG = {
+  videoGeneration: {
+    enabled: process.env.CRON_VIDEO_GENERATION_ENABLED === 'true',
+    minutes: parseInt(process.env.CRON_VIDEO_GENERATION_MINUTES) || 10
+  },
+  publicationScheduling: {
+    enabled: process.env.CRON_PUBLICATION_SCHEDULING_ENABLED === 'true',
+    minutes: parseInt(process.env.CRON_PUBLICATION_SCHEDULING_MINUTES) || 5
+  },
+  socialPublishing: {
+    enabled: process.env.CRON_SOCIAL_PUBLISHING_ENABLED === 'true',
+    minutes: parseInt(process.env.CRON_SOCIAL_PUBLISHING_MINUTES) || 2
+  },
+  scriptGeneration: {
+    enabled: process.env.CRON_SCRIPT_GENERATION_ENABLED === 'true',
+    minutes: parseInt(process.env.CRON_SCRIPT_GENERATION_MINUTES) || 7
+  }
+};
 
 // =============================================================================
 // EXPORTS
@@ -192,6 +205,7 @@ module.exports = {
   MINUTOS_DESFACE_MAX,
   TIMEZONE,
   CHANNEL_FILTER,
+  CRON_CONFIG,
   
   // Funciones
   cargarFiltroCanales

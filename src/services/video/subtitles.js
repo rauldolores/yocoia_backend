@@ -120,35 +120,39 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   for (const sub of subtitulos) {
     const palabrasArray = sub.palabras;
     
-    // Para cada palabra en el subtítulo
+    // Crear UN SOLO evento para toda la frase que dura desde el inicio hasta el fin
+    const inicioFrase = formatearTiempoASS(sub.inicio);
+    const finFrase = formatearTiempoASS(sub.fin);
+    
+    // Construir el texto con transiciones de color por palabra usando \t (transform)
+    let textoAnimado = '';
+    let tiempoAcumulado = 0; // Milisegundos desde el inicio de la frase
+    
     for (let i = 0; i < palabrasArray.length; i++) {
       const palabra = palabrasArray[i];
-      const inicioPalabra = formatearTiempoASS(palabra.start);
-      const finPalabra = formatearTiempoASS(palabra.end);
+      const palabraTexto = palabra.word.toUpperCase();
       
-      // Construir el texto con la palabra actual resaltada
-      let textoConResaltado = '';
+      // Calcular tiempos relativos al inicio de la frase (en milisegundos)
+      const inicioPalabraRelativo = Math.round((palabra.start - sub.inicio) * 1000);
+      const finPalabraRelativo = Math.round((palabra.end - sub.inicio) * 1000);
+      const duracionPalabra = finPalabraRelativo - inicioPalabraRelativo;
       
-      for (let j = 0; j < palabrasArray.length; j++) {
-        const palabraActual = palabrasArray[j].word.toUpperCase();
-        
-        if (j === i) {
-          // Palabra activa: color aleatorio y más grande con animación
-          textoConResaltado += `{\\c${colorSeleccionado.codigo}\\fscx115\\fscy115\\t(0,100,\\fscx120\\fscy120)}${palabraActual}{\\r}`;
-        } else {
-          // Palabras inactivas: blanco normal
-          textoConResaltado += `{\\c&HFFFFFF&}${palabraActual}{\\r}`;
-        }
-        
-        // Agregar espacio entre palabras (excepto la última)
-        if (j < palabrasArray.length - 1) {
-          textoConResaltado += ' ';
-        }
+      // Palabra con transición suave de color
+      // Antes de activarse: blanco
+      // Durante: color seleccionado con escala
+      // Después: vuelve a blanco
+      textoAnimado += `{\\t(${inicioPalabraRelativo},${inicioPalabraRelativo + 50},\\c${colorSeleccionado.codigo}\\fscx120\\fscy120)}`;
+      textoAnimado += `{\\t(${finPalabraRelativo - 50},${finPalabraRelativo},\\c&HFFFFFF&\\fscx100\\fscy100)}`;
+      textoAnimado += palabraTexto;
+      
+      // Agregar espacio entre palabras (excepto la última)
+      if (i < palabrasArray.length - 1) {
+        textoAnimado += ' ';
       }
-      
-      // Agregar diálogo con fade in/out suave
-      dialogos += `Dialogue: 0,${inicioPalabra},${finPalabra},Default,,0,0,0,,{\\fad(80,80)}${textoConResaltado}\n`;
     }
+    
+    // Un solo diálogo para toda la frase con fade in/out
+    dialogos += `Dialogue: 0,${inicioFrase},${finFrase},Default,,0,0,0,,{\\fad(150,150)}${textoAnimado}\n`;
   }
   
   await fsPromises.writeFile(rutaASS, assHeader + dialogos, 'utf-8');
