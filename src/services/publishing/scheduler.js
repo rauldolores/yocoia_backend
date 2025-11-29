@@ -1,31 +1,26 @@
-const { supabase, HORAS_PUBLICACION } = require('../../config');
-const { obtenerFechaMexico, obtenerTimestampMexico, generarDesfaceAleatorio } = require('../../utils/date');
+const moment = require('moment-timezone');
+const { supabase, HORAS_PUBLICACION, MINUTOS_DESFACE_MIN, MINUTOS_DESFACE_MAX, TIMEZONE } = require('../../config');
 
 /**
- * Obtener videos ya programados para un canal en una fecha específica
+ * Obtener videos ya programados para un canal en una ventana de tiempo
  * @param {string} canalId - ID del canal
- * @param {Date} fecha - Fecha a consultar
- * @returns {Promise<Array>} - Array de objetos con hora base y timestamp completo
+ * @param {Object} ventana - Objeto con inicio y fin (Date objects)
+ * @returns {Promise<Array>} - Array de videos programados en esa ventana
  */
-async function obtenerHorasProgramadasPorCanal(canalId, fecha) {
+async function obtenerHorasProgramadasPorCanal(canalId, ventana) {
   try {
-    const inicioDelDia = new Date(fecha);
-    inicioDelDia.setHours(0, 0, 0, 0);
-    
-    const finDelDia = new Date(fecha);
-    finDelDia.setHours(23, 59, 59, 999);
-
     const { data, error } = await supabase
       .from('videos')
       .select(`
+        id,
         publicacion_programada_at,
         guiones!fk_videos_guion (
           canal_id
         )
       `)
       .eq('guiones.canal_id', canalId)
-      .gte('publicacion_programada_at', inicioDelDia.toISOString())
-      .lte('publicacion_programada_at', finDelDia.toISOString())
+      .gte('publicacion_programada_at', ventana.inicio.toISOString())
+      .lte('publicacion_programada_at', ventana.fin.toISOString())
       .not('publicacion_programada_at', 'is', null);
 
     if (error) {
@@ -33,20 +28,7 @@ async function obtenerHorasProgramadasPorCanal(canalId, fecha) {
       throw error;
     }
 
-    // Extraer las horas base ya programadas (considerando ventana de tiempo)
-    const horasProgramadas = (data || []).map(video => {
-      const fechaProgramada = new Date(video.publicacion_programada_at);
-      const hora = fechaProgramada.getHours();
-      const minutos = fechaProgramada.getMinutes();
-      
-      return {
-        horaBase: hora,
-        timestamp: fechaProgramada,
-        minutos: minutos
-      };
-    });
-
-    return horasProgramadas;
+    return data || [];
   } catch (error) {
     console.error('⚠️  Error al obtener horas programadas:', error.message);
     return [];
@@ -59,67 +41,56 @@ async function obtenerHorasProgramadasPorCanal(canalId, fecha) {
  * @returns {Promise<Date|null>} - Fecha y hora disponible o null
  */
 async function encontrarProximaHoraDisponible(canalId) {
-  // Obtener hora actual en México
-  const ahora = obtenerFechaMexico();
+  // Obtener hora actual en la zona horaria configurada
+  const ahora = moment().tz(TIMEZONE);
   
-  // Intentar en los próximos 7 días
-  for (let diasAdelante = 0; diasAdelante < 7; diasAdelante++) {
-    const fechaObjetivo = new Date(ahora);
-    fechaObjetivo.setDate(ahora.getDate() + diasAdelante);
-    
-    // Obtener videos ya programados para este día
-    const videosOcupados = await obtenerHorasProgramadasPorCanal(canalId, fechaObjetivo);
-    
-    // Extraer solo las horas base ya ocupadas (sin importar los minutos exactos)
-    const horasBaseOcupadas = videosOcupados.map(v => v.horaBase);
-    
-    // Filtrar horas disponibles (que no tengan videos programados en su ventana)
-    const horasDisponibles = HORAS_PUBLICACION.filter(hora => !horasBaseOcupadas.includes(hora));
-    
-    // Si es hoy, solo considerar horas futuras
-    if (diasAdelante === 0) {
-      const horaActual = ahora.getHours();
-      const minutosActuales = ahora.getMinutes();
+  console.log(`   🌍 Buscando ventana en ${TIMEZONE}: ${ahora.format('DD/MM/YYYY HH:mm:ss')}`);
+  
+  // Intentar en los próximos 30 días
+  for (let dia = 0; dia < 30; dia++) {
+    for (const hora of HORAS_PUBLICACION) {
+      // Crear fecha en la zona horaria configurada
+      const fecha = moment().tz(TIMEZONE).add(dia, 'days').hour(hora).minute(0).second(0).millisecond(0);
       
-      // Filtrar horas que ya pasaron (con margen considerando el desface máximo)
-      const horasFuturas = horasDisponibles.filter(hora => {
-        // Si la hora base es mayor, está disponible
-        if (hora > horaActual) return true;
-        // Si es la misma hora, verificar que haya tiempo suficiente (30 min de margen)
-        if (hora === horaActual && minutosActuales < 30) return true;
-        return false;
+      // Si la fecha ya pasó, continuar
+      if (fecha.isSameOrBefore(ahora)) {
+        continue;
+      }
+      
+      // Calcular ventana de tiempo para esta hora
+      const inicioVentana = fecha.clone().minute(MINUTOS_DESFACE_MIN);
+      const finVentana = fecha.clone().minute(MINUTOS_DESFACE_MAX);
+      
+      // Verificar si hay videos ya programados en esta ventana
+      const videosEnVentana = await obtenerHorasProgramadasPorCanal(canalId, {
+        inicio: inicioVentana.toDate(),
+        fin: finVentana.toDate()
       });
       
-      if (horasFuturas.length > 0) {
-        const horaSeleccionada = horasFuturas[0];
-        const desfaceMinutos = generarDesfaceAleatorio();
+      // Si la ventana está libre, programar aquí
+      if (videosEnVentana.length === 0) {
+        // Calcular minuto aleatorio dentro de la ventana
+        const minutosAleatorios = Math.floor(
+          Math.random() * (MINUTOS_DESFACE_MAX - MINUTOS_DESFACE_MIN + 1)
+        ) + MINUTOS_DESFACE_MIN;
         
-        const fechaProgramada = new Date(fechaObjetivo);
-        fechaProgramada.setHours(horaSeleccionada, desfaceMinutos, 0, 0);
+        const fechaFinal = fecha.clone().minute(minutosAleatorios).second(0).millisecond(0);
         
-        console.log(`   🎲 Desface aleatorio: +${desfaceMinutos} minutos`);
-        console.log(`   ⏰ Hora programada: ${fechaProgramada.toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}`);
+        console.log(`   🎲 Desface aleatorio: +${minutosAleatorios} minutos`);
+        console.log(`   ⏰ Hora programada: ${fechaFinal.format('DD/MM/YYYY, h:mm:ss a')}`);
         
-        return fechaProgramada;
-      }
-    } else {
-      // Para días futuros, tomar la primera hora disponible
-      if (horasDisponibles.length > 0) {
-        const horaSeleccionada = horasDisponibles[0];
-        const desfaceMinutos = generarDesfaceAleatorio();
-        
-        const fechaProgramada = new Date(fechaObjetivo);
-        fechaProgramada.setHours(horaSeleccionada, desfaceMinutos, 0, 0);
-        
-        console.log(`   🎲 Desface aleatorio: +${desfaceMinutos} minutos`);
-        console.log(`   ⏰ Hora programada: ${fechaProgramada.toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}`);
-        
-        return fechaProgramada;
+        return fechaFinal.toDate();
       }
     }
   }
   
-  return null; // No hay horas disponibles en los próximos 7 días
+  // Fallback: programar mañana a la primera hora disponible
+  const fallback = moment().tz(TIMEZONE).add(1, 'day').hour(HORAS_PUBLICACION[0]).minute(MINUTOS_DESFACE_MIN).second(0).millisecond(0);
+  
+  console.log(`   ⚠️  No se encontró ventana disponible en 30 días`);
+  console.log(`   📅 Programando en fallback: ${fallback.format('DD/MM/YYYY, h:mm:ss a')}`);
+  
+  return fallback.toDate();
 }
 
 /**
@@ -129,17 +100,20 @@ async function encontrarProximaHoraDisponible(canalId) {
  */
 async function programarPublicacionVideo(videoId, fechaHora) {
   try {
+    const ahora = moment().tz(TIMEZONE);
+    
     const { error } = await supabase
       .from('videos')
       .update({
         publicacion_programada_at: fechaHora.toISOString(),
-        updated_at: obtenerTimestampMexico()
+        updated_at: ahora.toDate().toISOString()
       })
       .eq('id', videoId);
 
     if (error) throw error;
     
-    console.log(`✅ Video ${videoId} programado para: ${fechaHora.toLocaleString('es-MX')}`);
+    const fechaMoment = moment(fechaHora).tz(TIMEZONE);
+    console.log(`✅ Video ${videoId} programado para: ${fechaMoment.format('DD/MM/YYYY, h:mm:ss a')}`);
   } catch (error) {
     console.error('❌ Error al programar video:', error.message);
     throw error;
