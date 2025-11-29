@@ -61,13 +61,14 @@ async function encontrarProximaHoraDisponible(canalId) {
       const inicioVentana = fecha.clone().minute(MINUTOS_DESFACE_MIN);
       const finVentana = fecha.clone().minute(MINUTOS_DESFACE_MAX);
       
-      // Verificar si hay videos ya programados en esta ventana
+      // Verificar si YA HAY UN VIDEO DE ESTE CANAL en esta ventana
       const videosEnVentana = await obtenerHorasProgramadasPorCanal(canalId, {
         inicio: inicioVentana.toDate(),
         fin: finVentana.toDate()
       });
       
-      // Si la ventana está libre, programar aquí
+      // Si ESTE CANAL no tiene video en esta ventana, programar aquí
+      // (otros canales pueden tener videos en la misma ventana, eso está bien)
       if (videosEnVentana.length === 0) {
         // Calcular minuto aleatorio dentro de la ventana
         const minutosAleatorios = Math.floor(
@@ -84,8 +85,17 @@ async function encontrarProximaHoraDisponible(canalId) {
     }
   }
   
-  // Fallback: programar mañana a la primera hora disponible
-  const fallback = moment().tz(TIMEZONE).add(1, 'day').hour(HORAS_PUBLICACION[0]).minute(MINUTOS_DESFACE_MIN).second(0).millisecond(0);
+  // Fallback: programar mañana a la primera hora disponible con minuto aleatorio avanzado
+  const minutosAleatorios = Math.floor(
+    Math.random() * (MINUTOS_DESFACE_MAX - MINUTOS_DESFACE_MIN + 1)
+  ) + MINUTOS_DESFACE_MIN;
+  
+  const fallback = moment().tz(TIMEZONE)
+    .add(1, 'day')
+    .hour(HORAS_PUBLICACION[0])
+    .minute(minutosAleatorios)
+    .second(0)
+    .millisecond(0);
   
   console.log(`   ⚠️  No se encontró ventana disponible en 30 días`);
   console.log(`   📅 Programando en fallback: ${fallback.format('DD/MM/YYYY, h:mm:ss a')}`);
