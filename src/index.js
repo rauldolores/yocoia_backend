@@ -169,12 +169,20 @@ async function ejecutarProcesosIniciales() {
   console.log('🔄 Ejecutando procesos iniciales...\n');
 
   try {
-    // Ejecutar generación de videos
-    await procesarVideos();
-    console.log('');
+    // Ejecutar generación de videos solo si está habilitado
+    if (CRON_CONFIG.videoGeneration.enabled) {
+      await procesarVideos();
+      console.log('');
+    } else {
+      console.log('⏸️  Generación de videos deshabilitada, omitiendo proceso inicial\n');
+    }
     
-    // Después de procesar videos, ejecutar programación
-    await programarPublicaciones();
+    // Ejecutar programación solo si está habilitado
+    if (CRON_CONFIG.publicationScheduling.enabled) {
+      await programarPublicaciones();
+    } else {
+      console.log('⏸️  Programación de publicaciones deshabilitada, omitiendo proceso inicial\n');
+    }
   } catch (error) {
     console.error('Error en procesos iniciales:', error);
   }
