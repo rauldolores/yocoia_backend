@@ -19,7 +19,7 @@ async function obtenerHorasProgramadasPorCanal(canalId, fecha) {
       .from('videos')
       .select(`
         publicacion_programada_at,
-        guiones!videos_guion_id_fkey (
+        guiones!fk_videos_guion (
           canal_id
         )
       `)
@@ -28,7 +28,10 @@ async function obtenerHorasProgramadasPorCanal(canalId, fecha) {
       .lte('publicacion_programada_at', finDelDia.toISOString())
       .not('publicacion_programada_at', 'is', null);
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Error en consulta de horas programadas:', error);
+      throw error;
+    }
 
     // Extraer las horas base ya programadas (considerando ventana de tiempo)
     const horasProgramadas = (data || []).map(video => {
