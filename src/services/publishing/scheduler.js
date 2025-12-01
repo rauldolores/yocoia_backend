@@ -9,16 +9,18 @@ const { supabase, HORAS_PUBLICACION, MINUTOS_DESFACE_MIN, MINUTOS_DESFACE_MAX, T
  */
 async function obtenerHorasProgramadasPorCanal(canalId, ventana) {
   try {
-    const { data, error } = await supabase
+    console.log(`            🔎 [DEBUG] Consultando videos programados:`);
+    console.log(`               Canal ID buscado: ${canalId}`);
+    console.log(`               Ventana: ${moment(ventana.inicio).tz(TIMEZONE).format('DD/MM/YYYY HH:mm')} - ${moment(ventana.fin).tz(TIMEZONE).format('DD/MM/YYYY HH:mm')}`);
+    
+    // Primero, obtener TODOS los videos en la ventana con sus guiones
+    const { data: todosLosVideos, error } = await supabase
       .from('videos')
       .select(`
         id,
-        publicacion_programada_at,
-        guiones!fk_videos_guion (
-          canal_id
-        )
+        guion_id,
+        publicacion_programada_at
       `)
-      .eq('guiones.canal_id', canalId)
       .gte('publicacion_programada_at', ventana.inicio.toISOString())
       .lte('publicacion_programada_at', ventana.fin.toISOString())
       .not('publicacion_programada_at', 'is', null);
@@ -28,7 +30,51 @@ async function obtenerHorasProgramadasPorCanal(canalId, ventana) {
       throw error;
     }
 
-    return data || [];
+    console.log(`               📊 Videos totales en ventana: ${todosLosVideos?.length || 0}`);
+
+    // Si no hay videos, retornar vacío
+    if (!todosLosVideos || todosLosVideos.length === 0) {
+      return [];
+    }
+
+    // Obtener los guion_ids únicos
+    const guionIds = [...new Set(todosLosVideos.map(v => v.guion_id))];
+    
+    // Consultar los guiones para obtener sus canal_id
+    const { data: guiones, error: guionesError } = await supabase
+      .from('guiones')
+      .select('id, canal_id')
+      .in('id', guionIds);
+
+    if (guionesError) {
+      console.error('❌ Error al consultar guiones:', guionesError);
+      throw guionesError;
+    }
+
+    // Crear un mapa de guion_id -> canal_id
+    const guionCanalMap = {};
+    guiones?.forEach(g => {
+      guionCanalMap[g.id] = g.canal_id;
+    });
+
+    // Filtrar videos que pertenecen al canal buscado
+    const videosDelCanal = todosLosVideos.filter(v => {
+      const canalDelVideo = guionCanalMap[v.guion_id];
+      return canalDelVideo === canalId;
+    });
+
+    console.log(`               📊 Videos filtrados del canal: ${videosDelCanal.length}`);
+    if (videosDelCanal.length > 0) {
+      videosDelCanal.forEach((v, idx) => {
+        const canalDelVideo = guionCanalMap[v.guion_id];
+        console.log(`               ${idx + 1}. Video ${v.id}`);
+        console.log(`                  - Guion ID: ${v.guion_id}`);
+        console.log(`                  - Canal ID: ${canalDelVideo}`);
+        console.log(`                  - Fecha programada: ${moment(v.publicacion_programada_at).tz(TIMEZONE).format('DD/MM/YYYY HH:mm:ss')}`);
+      });
+    }
+
+    return videosDelCanal;
   } catch (error) {
     console.error('⚠️  Error al obtener horas programadas:', error.message);
     return [];
@@ -44,16 +90,26 @@ async function encontrarProximaHoraDisponible(canalId) {
   // Obtener hora actual en la zona horaria configurada
   const ahora = moment().tz(TIMEZONE);
   
-  console.log(`   🌍 Buscando ventana en ${TIMEZONE}: ${ahora.format('DD/MM/YYYY HH:mm:ss')}`);
+  console.log(`\n   🔍 === INICIO BÚSQUEDA DE VENTANA ===`);
+  console.log(`   📺 Canal ID: ${canalId}`);
+  console.log(`   🌍 Zona horaria: ${TIMEZONE}`);
+  console.log(`   🕐 Hora actual: ${ahora.format('DD/MM/YYYY HH:mm:ss')}`);
+  console.log(`   📋 Horas configuradas: ${HORAS_PUBLICACION.join(', ')}`);
+  console.log(`   ⏱️  Ventana de desface: ${MINUTOS_DESFACE_MIN}-${MINUTOS_DESFACE_MAX} minutos\n`);
   
   // Intentar en los próximos 30 días
   for (let dia = 0; dia < 30; dia++) {
+    console.log(`   📅 Evaluando día +${dia} (${moment().tz(TIMEZONE).add(dia, 'days').format('DD/MM/YYYY')})`);
+    
     for (const hora of HORAS_PUBLICACION) {
       // Crear fecha en la zona horaria configurada
       const fecha = moment().tz(TIMEZONE).add(dia, 'days').hour(hora).minute(0).second(0).millisecond(0);
       
+      console.log(`      🕐 Evaluando hora: ${hora}:00 (${fecha.format('DD/MM/YYYY HH:mm:ss')})`);
+      
       // Si la fecha ya pasó, continuar
       if (fecha.isSameOrBefore(ahora)) {
+        console.log(`         ⏭️  OMITIDA: La hora ya pasó`);
         continue;
       }
       
@@ -61,27 +117,41 @@ async function encontrarProximaHoraDisponible(canalId) {
       const inicioVentana = fecha.clone().minute(MINUTOS_DESFACE_MIN);
       const finVentana = fecha.clone().minute(MINUTOS_DESFACE_MAX);
       
+      console.log(`         📊 Ventana: ${inicioVentana.format('HH:mm')} - ${finVentana.format('HH:mm')}`);
+      
       // Verificar si YA HAY UN VIDEO DE ESTE CANAL en esta ventana
       const videosEnVentana = await obtenerHorasProgramadasPorCanal(canalId, {
         inicio: inicioVentana.toDate(),
         fin: finVentana.toDate()
       });
       
+      console.log(`         🎬 Videos del canal en esta ventana: ${videosEnVentana.length}`);
+      
+      if (videosEnVentana.length > 0) {
+        console.log(`         ❌ OCUPADA: Este canal ya tiene ${videosEnVentana.length} video(s) programado(s)`);
+        videosEnVentana.forEach((v, idx) => {
+          const fechaProg = moment(v.publicacion_programada_at).tz(TIMEZONE);
+          console.log(`            ${idx + 1}. Video ${v.id} → ${fechaProg.format('DD/MM/YYYY HH:mm:ss')}`);
+        });
+        continue;
+      }
+      
       // Si ESTE CANAL no tiene video en esta ventana, programar aquí
       // (otros canales pueden tener videos en la misma ventana, eso está bien)
-      if (videosEnVentana.length === 0) {
-        // Calcular minuto aleatorio dentro de la ventana
-        const minutosAleatorios = Math.floor(
-          Math.random() * (MINUTOS_DESFACE_MAX - MINUTOS_DESFACE_MIN + 1)
-        ) + MINUTOS_DESFACE_MIN;
-        
-        const fechaFinal = fecha.clone().minute(minutosAleatorios).second(0).millisecond(0);
-        
-        console.log(`   🎲 Desface aleatorio: +${minutosAleatorios} minutos`);
-        console.log(`   ⏰ Hora programada: ${fechaFinal.format('DD/MM/YYYY, h:mm:ss a')}`);
-        
-        return fechaFinal.toDate();
-      }
+      console.log(`         ✅ DISPONIBLE: Esta ventana está libre para este canal`);
+      
+      // Calcular minuto aleatorio dentro de la ventana
+      const minutosAleatorios = Math.floor(
+        Math.random() * (MINUTOS_DESFACE_MAX - MINUTOS_DESFACE_MIN + 1)
+      ) + MINUTOS_DESFACE_MIN;
+      
+      const fechaFinal = fecha.clone().minute(minutosAleatorios).second(0).millisecond(0);
+      
+      console.log(`         🎲 Desface aleatorio: +${minutosAleatorios} minutos`);
+      console.log(`         ⏰ Hora seleccionada: ${fechaFinal.format('DD/MM/YYYY HH:mm:ss')}`);
+      console.log(`   🎯 === FIN BÚSQUEDA: VENTANA ENCONTRADA ===\n`);
+      
+      return fechaFinal.toDate();
     }
   }
   
