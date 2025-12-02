@@ -84,32 +84,37 @@ function formatearTiempoASS(segundos) {
 async function generarArchivoASS(subtitulos, rutaASS) {
   console.log('🎨 Generando archivo de subtítulos ASS con estilo TikTok/Reels...');
   
-  // Colores disponibles para resaltado (formato ASS: BGR en hexadecimal)
+  // Colores disponibles para resaltado de fondo (formato ASS: &HAABBGGRR&)
+  // AA = Alpha (00 = opaco, FF = transparente), BBGGRR = Blue Green Red
   const coloresResaltado = [
-    { nombre: 'Amarillo', codigo: '&H00FFFF&', emoji: '🟡' },
-    { nombre: 'Naranja', codigo: '&H0080FF&', emoji: '🟠' },
-    { nombre: 'Verde neón', codigo: '&H00FF00&', emoji: '🟢' },
-    { nombre: 'Azul cielo', codigo: '&HFFFF00&', emoji: '🔵' },
-    { nombre: 'Morado', codigo: '&HFF00FF&', emoji: '🟣' },
-    { nombre: 'Rojo', codigo: '&H0000FF&', emoji: '🔴' }
+    { nombre: 'Amarillo', codigo: '&H00FFFF00&', emoji: '🟡' },      // Amarillo opaco
+    { nombre: 'Naranja', codigo: '&H0000A5FF&', emoji: '🟠' },       // Naranja opaco
+    { nombre: 'Verde neón', codigo: '&H0000FF00&', emoji: '🟢' },    // Verde opaco
+    { nombre: 'Azul cielo', codigo: '&H00FFAA00&', emoji: '🔵' },    // Azul opaco
+    { nombre: 'Morado', codigo: '&H00FF00FF&', emoji: '🟣' },        // Morado opaco
+    { nombre: 'Rojo', codigo: '&H000000FF&', emoji: '🔴' }           // Rojo opaco
   ];
   
   // Seleccionar un color aleatorio para este video
   const colorSeleccionado = coloresResaltado[Math.floor(Math.random() * coloresResaltado.length)];
   console.log(`   ${colorSeleccionado.emoji} Color de resaltado: ${colorSeleccionado.nombre}`);
   
-  // Configuración de estilo TikTok/Reels
+  // Configuración de estilo Karaoke/Reels con fondo de color
   const assHeader = `[Script Info]
-Title: Subtítulos Estilo TikTok
-ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
-WrapStyle: 0
+Title=Karaoke estilo Reels
+ScriptType=v4.00+
+PlayResX=1080
+PlayResY=1920
+WrapStyle=0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial Black,85,&H00FFFFFF,&H000000FF,&H00000000,&HA0000000,-1,0,0,0,100,100,0,0,1,4,2,2,40,40,330,1
-Style: Highlight,Arial Black,95,&H0000FFFF,&H000000FF,&H00000000,&HA0000000,-1,0,0,0,115,115,0,0,1,5,3,2,40,40,330,1
+
+; Texto blanco normal con borde negro
+Style: Blanco,Arial Black,18,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,1,2,2,40,40,80,1
+
+; Estilo de palabra resaltada con fondo de color (BorderStyle=4 = caja opaca con borde)
+Style: Resaltado,Arial Black,18,${colorSeleccionado.codigo},${colorSeleccionado.codigo},&H00000000,&H00000000,-1,0,0,0,100,100,0,0,4,3,0,2,40,40,80,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -120,41 +125,38 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   for (const sub of subtitulos) {
     const palabrasArray = sub.palabras;
     
-    // Crear UN SOLO evento para toda la frase que dura desde el inicio hasta el fin
-    const inicioFrase = formatearTiempoASS(sub.inicio);
-    const finFrase = formatearTiempoASS(sub.fin);
-    
-    // Construir el texto con transiciones de color por palabra usando \t (transform)
-    let textoAnimado = '';
-    let tiempoAcumulado = 0; // Milisegundos desde el inicio de la frase
-    
+    // Mostrar grupos de palabras (la actual resaltada, las demás en blanco)
     for (let i = 0; i < palabrasArray.length; i++) {
       const palabra = palabrasArray[i];
       const palabraTexto = palabra.word.toUpperCase();
       
-      // Calcular tiempos relativos al inicio de la frase (en milisegundos)
-      const inicioPalabraRelativo = Math.round((palabra.start - sub.inicio) * 1000);
-      const finPalabraRelativo = Math.round((palabra.end - sub.inicio) * 1000);
-      const duracionPalabra = finPalabraRelativo - inicioPalabraRelativo;
+      // Tiempos de esta palabra
+      const inicioPalabra = formatearTiempoASS(palabra.start);
+      const finPalabra = formatearTiempoASS(palabra.end);
       
-      // Palabra con transición suave de color
-      // Antes de activarse: blanco
-      // Durante: color seleccionado con escala
-      // Después: vuelve a blanco
-      textoAnimado += `{\\t(${inicioPalabraRelativo},${inicioPalabraRelativo + 50},\\c${colorSeleccionado.codigo}\\fscx120\\fscy120)}`;
-      textoAnimado += `{\\t(${finPalabraRelativo - 50},${finPalabraRelativo},\\c&HFFFFFF&\\fscx100\\fscy100)}`;
-      textoAnimado += palabraTexto;
+      // Construir grupo de palabras: hasta 2 anteriores + actual + hasta 1 siguiente
+      let textoGrupo = '';
       
-      // Agregar espacio entre palabras (excepto la última)
-      if (i < palabrasArray.length - 1) {
-        textoAnimado += ' ';
+      // Palabras anteriores (máximo 2)
+      const inicio = Math.max(0, i - 2);
+      for (let j = inicio; j < i; j++) {
+        textoGrupo += palabrasArray[j].word.toUpperCase() + ' ';
       }
+      
+      // Palabra actual con fondo de color usando tag {\3c}
+      // Usamos \3c para cambiar el OutlineColour temporalmente
+      textoGrupo += `{\\3c${colorSeleccionado.codigo.replace('&', '').replace('&', '')}}${palabraTexto}{\\3c&H000000&}`;
+      
+      // Palabra siguiente (si existe)
+      if (i < palabrasArray.length - 1) {
+        textoGrupo += ' ' + palabrasArray[i + 1].word.toUpperCase();
+      }
+      
+      // Crear diálogo con el grupo completo
+      dialogos += `Dialogue: 0,${inicioPalabra},${finPalabra},Blanco,,0,0,0,,${textoGrupo}\n`;
     }
-    
-    // Un solo diálogo para toda la frase con fade in/out
-    dialogos += `Dialogue: 0,${inicioFrase},${finFrase},Default,,0,0,0,,{\\fad(150,150)}${textoAnimado}\n`;
   }
-  
+  console.log("ASS: " + assHeader + dialogos);
   await fsPromises.writeFile(rutaASS, assHeader + dialogos, 'utf-8');
   console.log(`✅ Archivo ASS generado: ${rutaASS}`);
   console.log(`   Total de diálogos: ${dialogos.split('\n').length - 1}`);
