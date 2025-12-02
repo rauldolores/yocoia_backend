@@ -197,27 +197,30 @@ async function generarVideo(rutasMedias, rutaAudio, duracionPorSegmento, rutaSal
           const patron = PATRONES_PAN[index % PATRONES_PAN.length];
           console.log(`   🖼️  Imagen ${index + 1}: Ken Burns + Paneo ${patron.nombre} (${info.duracionSegmento.toFixed(2)}s)`);
           
-          // Calcular movimiento de paneo con easing
+          // Calcular movimiento de paneo con easing suave (ease-in-out)
+          // Usa pow(3) para distribuir mejor el movimiento durante toda la duración
           let paneoX, paneoY;
           
           if (patron.factorX !== undefined) {
-            // Paneo horizontal
+            // Paneo horizontal con easing muy pronunciado (pow 8)
             const inicio = patron.factorX;
             const rango = Math.abs(patron.factorX) * 2;
             
-            paneoX = `iw/2-(iw/zoom/2) + iw*${inicio}*(1-1/zoom) + iw*${rango}*${patron.direccionX}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},18)),pow((on-${mitadDuracion})/${mitadDuracion},18))`;
+            paneoX = `iw/2-(iw/zoom/2) + iw*${inicio}*(1-1/zoom) + iw*${rango}*${patron.direccionX}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},8)),pow((on-${mitadDuracion})/${mitadDuracion},8))`;
             paneoY = `ih/2-(ih/zoom/2)`;
           } else {
-            // Paneo vertical
+            // Paneo vertical con easing muy pronunciado (pow 8)
             const inicio = patron.factorY;
             const rango = Math.abs(patron.factorY) * 2;
             
             paneoX = `iw/2-(iw/zoom/2)`;
-            paneoY = `ih/2-(ih/zoom/2) + ih*${inicio}*(1-1/zoom) + ih*${rango}*${patron.direccionY}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},18)),pow((on-${mitadDuracion})/${mitadDuracion},18))`;
+            paneoY = `ih/2-(ih/zoom/2) + ih*${inicio}*(1-1/zoom) + ih*${rango}*${patron.direccionY}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},8)),pow((on-${mitadDuracion})/${mitadDuracion},8))`;
           }
           
-          // Fórmula de easing para transiciones con zoom dramático
-          const filtro = `${inputLabel}scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,zoompan=z='if(lte(on,${mitadDuracion}),1.7-0.7*(1-pow(1-on/${mitadDuracion},18)),1.0+0.7*pow((on-${mitadDuracion})/${mitadDuracion},18))':d=${duracionFrames}:x='${paneoX}':y='${paneoY}':s=${width}x${height},fps=${fps},setpts=PTS-STARTPTS${outputLabel}`;
+          // Fórmula de zoom con easing ease-in-out (pow 8)
+          // Zoom OUT (1.7x → 1.0x) primera mitad, Zoom IN (1.0x → 1.7x) segunda mitad
+          // El pow(8) distribuye: ~90% movimiento en primeros/últimos 15%, muy estático en el medio
+          const filtro = `${inputLabel}scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,zoompan=z='if(lte(on,${mitadDuracion}),1.7-0.7*(1-pow(1-on/${mitadDuracion},8)),1.0+0.7*pow((on-${mitadDuracion})/${mitadDuracion},8))':d=${duracionFrames}:x='${paneoX}':y='${paneoY}':s=${width}x${height},fps=${fps},setpts=PTS-STARTPTS${outputLabel}`;
           
           filtros.push(filtro);
         } else if (info.esVideo) {
