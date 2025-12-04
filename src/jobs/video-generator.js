@@ -13,6 +13,7 @@ const {
   registrarVideoEnDB,
   actualizarEstadoGuion 
 } = require('../database');
+const { EstadoConsola, cambiarEstado } = require('../services/heartbeat');
 
 /**
  * Ordenar imágenes por número de escena
@@ -255,11 +256,19 @@ async function procesarVideos() {
       console.log('─'.repeat(80) + '\n');
 
       try {
+        // Reportar estado ocupada
+        cambiarEstado(EstadoConsola.OCUPADA, { 
+          videoEnProceso: `${guion.nombre} (${i + 1}/${guiones.length})` 
+        });
+        
         await procesarGuionIndividual(guion);
         console.log(`\n✅ Guion ${i + 1}/${guiones.length} procesado exitosamente\n`);
       } catch (error) {
         console.error(`\n❌ Error procesando guion ${guion.id}:`, error.message);
         console.error('   Continuando con el siguiente guion...\n');
+        
+        // Reportar estado de error
+        cambiarEstado(EstadoConsola.ERROR, { error });
         
         // Marcar guion con error
         await actualizarEstadoGuion(guion.id, 'error_produccion');
@@ -270,10 +279,16 @@ async function procesarVideos() {
     console.log('🎉 PROCESO COMPLETADO');
     console.log(`   Total procesados: ${guiones.length}`);
     console.log('='.repeat(80) + '\n');
+    
+    // Volver a estado esperando
+    cambiarEstado(EstadoConsola.ESPERANDO);
 
   } catch (error) {
     console.error('\n❌ ERROR FATAL EN EL PROCESO:', error.message);
     console.error('Stack trace:', error.stack);
+    
+    // Reportar estado de error
+    cambiarEstado(EstadoConsola.ERROR, { error });
   } finally {
     // Limpiar archivos temporales
     limpiarTemp();

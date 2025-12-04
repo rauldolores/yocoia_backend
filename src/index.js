@@ -17,6 +17,10 @@ const {
   publicarEnRedesSociales,
   generarGuionesDesdeIdeas
 } = require('./jobs');
+const { iniciarHeartbeat, detenerHeartbeat, EstadoConsola, cambiarEstado } = require('./services/heartbeat');
+
+// Variable global para el intervalo de heartbeat
+let heartbeatIntervalId = null;
 
 /**
  * Mostrar configuración de ventanas de programación
@@ -192,6 +196,10 @@ async function ejecutarProcesosIniciales() {
  * Función principal
  */
 async function main() {
+  // Iniciar servicio de heartbeat
+  const heartbeatMinutes = parseInt(process.env.HEARTBEAT_INTERVAL_MINUTES || '5', 10);
+  heartbeatIntervalId = await iniciarHeartbeat(heartbeatMinutes);
+  
   // Mostrar configuración de programación
   mostrarConfiguracionProgramacion();
   
@@ -203,10 +211,19 @@ async function main() {
 
   // Iniciar los cron jobs
   iniciarCron();
+  
+  // Cambiar estado a activa después de inicialización
+  cambiarEstado(EstadoConsola.ACTIVA);
 
   // Mantener el proceso vivo y manejar cierre graceful
   process.on('SIGINT', () => {
     console.log('\n\n👋 Deteniendo servicio de generación de videos...');
+    
+    // Detener heartbeat
+    if (heartbeatIntervalId) {
+      detenerHeartbeat(heartbeatIntervalId);
+    }
+    
     limpiarTemp();
     console.log('✅ Servicio detenido correctamente');
     process.exit(0);
