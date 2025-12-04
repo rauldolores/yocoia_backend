@@ -65,6 +65,11 @@ async function generarVideo(rutasMedias, rutaAudio, duracionPorSegmento, rutaSal
       const width = VIDEO_CONFIG.width || 1080;
       const height = VIDEO_CONFIG.height || 1920;
       
+      // Obtener duración del audio primero
+      console.log('🎵 Obteniendo duración del audio...');
+      const duracionAudio = await obtenerDuracionVideo(rutaAudio);
+      console.log(`   - Duración del audio: ${duracionAudio.toFixed(2)}s`);
+      
       // Analizar cada media y determinar su duración real
       const mediasInfo = [];
       for (let i = 0; i < rutasMedias.length; i++) {
@@ -93,14 +98,37 @@ async function generarVideo(rutasMedias, rutaAudio, duracionPorSegmento, rutaSal
           }
         } else if (info.esImagen) {
           console.log(`   [${i}] 🖼️  IMAGEN: ${path.basename(rutaMedia)}`);
-          console.log(`       Duración: ${duracionPorSegmento}s`);
+          console.log(`       Duración inicial: ${duracionPorSegmento}s`);
         }
 
         mediasInfo.push(info);
       }
       
-      const duracionTotalEstimada = mediasInfo.reduce((sum, m) => sum + m.duracionSegmento, 0);
-      console.log(`   - Duración total estimada: ${duracionTotalEstimada.toFixed(2)}s`);
+      // Calcular duración total de videos y medias
+      const duracionTotalInicial = mediasInfo.reduce((sum, m) => sum + m.duracionSegmento, 0);
+      const diferencia = duracionAudio - duracionTotalInicial;
+      
+      console.log(`   - Duración total inicial de medias: ${duracionTotalInicial.toFixed(2)}s`);
+      console.log(`   - Diferencia con audio: ${diferencia.toFixed(2)}s`);
+      
+      // Si hay diferencia, ajustar solo las imágenes proporcionalmente
+      if (Math.abs(diferencia) > 0.1) {
+        const imagenes = mediasInfo.filter(m => m.esImagen);
+        if (imagenes.length > 0) {
+          const ajustePorImagen = diferencia / imagenes.length;
+          console.log(`   - Ajustando ${imagenes.length} imágenes en ${ajustePorImagen.toFixed(2)}s cada una`);
+          
+          imagenes.forEach(img => {
+            img.duracionSegmento += ajustePorImagen;
+            // Asegurar que no sea negativa
+            if (img.duracionSegmento < 0.5) img.duracionSegmento = 0.5;
+          });
+        }
+      }
+      
+      const duracionTotalFinal = mediasInfo.reduce((sum, m) => sum + m.duracionSegmento, 0);
+      console.log(`   - Duración total ajustada: ${duracionTotalFinal.toFixed(2)}s`);
+      console.log(`   - Coincide con audio: ${Math.abs(duracionTotalFinal - duracionAudio) < 0.1 ? '✅ SÍ' : '⚠️  NO'}`);
       
       // Verificar archivos de media
       console.log('\n📁 Verificando archivos de media:');
@@ -280,7 +308,7 @@ async function generarVideo(rutasMedias, rutaAudio, duracionPorSegmento, rutaSal
             '-pix_fmt ' + VIDEO_CONFIG.pixelFormat,
             '-c:a aac',
             '-b:a 192k',
-            '-shortest'
+            `-t ${duracionAudio.toFixed(3)}`
           ])
           .output(rutaVideoTemp)
           .on('start', (commandLine) => {
