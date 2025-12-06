@@ -13,7 +13,7 @@ const {
   registrarVideoEnDB,
   actualizarEstadoGuion 
 } = require('../database');
-const { EstadoConsola, cambiarEstado } = require('../services/heartbeat');
+const { EstadoConsola, cambiarEstado, reportarError, TipoError, Severidad } = require('../services/heartbeat');
 
 /**
  * Ordenar imágenes por número de escena
@@ -202,6 +202,20 @@ async function procesarGuionIndividual(guion) {
     console.error('\n❌ ERROR EN PROCESAMIENTO DEL GUION:', error.message);
     console.error('Stack trace:', error.stack);
     
+    // Reportar error de procesamiento
+    await reportarError({
+      tipo: TipoError.PROCESSING,
+      severidad: Severidad.ERROR,
+      mensaje: `Error al procesar guion: ${error.message}`,
+      error: error,
+      canalId: guion.canal_id,
+      contexto: {
+        guion_id: guion.id,
+        guion_nombre: guion.nombre,
+        etapa: 'procesamiento_video'
+      }
+    });
+    
     // Intentar limpiar archivos temporales incluso si hay error
     console.log('🧹 Limpiando archivos temporales del guion (tras error)...');
     if (fs.existsSync(tempDirGuion)) {
@@ -286,6 +300,18 @@ async function procesarVideos() {
   } catch (error) {
     console.error('\n❌ ERROR FATAL EN EL PROCESO:', error.message);
     console.error('Stack trace:', error.stack);
+    
+    // Reportar error crítico
+    await reportarError({
+      tipo: TipoError.PROCESSING,
+      severidad: Severidad.CRITICAL,
+      mensaje: `Error fatal en proceso de generación de videos: ${error.message}`,
+      error: error,
+      contexto: {
+        proceso: 'generacion_videos',
+        etapa: 'inicializacion'
+      }
+    });
     
     // Reportar estado de error
     cambiarEstado(EstadoConsola.ERROR, { error });

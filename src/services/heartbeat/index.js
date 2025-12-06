@@ -218,6 +218,135 @@ async function enviarHeartbeat(consoleId, apiBaseUrl) {
 }
 
 /**
+ * Tipos de error para reportes
+ */
+const TipoError = {
+  API: 'api',               // Errores de API externa (YouTube, Facebook, etc.)
+  NETWORK: 'network',       // Problemas de red/conectividad
+  AUTH: 'auth',             // Problemas de autenticación
+  PROCESSING: 'processing', // Errores al procesar el video
+  UPLOAD: 'upload',         // Errores al subir el video
+  DATABASE: 'database',     // Errores de base de datos
+  OTRO: 'otro'             // Otros errores
+};
+
+/**
+ * Severidades de error
+ */
+const Severidad = {
+  INFO: 'info',         // Informativo, no es error real
+  WARNING: 'warning',   // Advertencia, puede continuar
+  ERROR: 'error',       // Error que impide la operación actual
+  CRITICAL: 'critical'  // Error crítico que detiene la consola
+};
+
+/**
+ * Reportar error al servidor
+ * @param {Object} error - Información del error
+ * @param {string} error.tipo - Tipo de error (usar TipoError)
+ * @param {string} error.severidad - Severidad (usar Severidad)
+ * @param {string} error.mensaje - Mensaje descriptivo
+ * @param {Error} [error.error] - Objeto Error original
+ * @param {string} [error.canalId] - ID del canal (opcional)
+ * @param {string} [error.videoId] - ID del video (opcional)
+ * @param {Object} [error.contexto] - Contexto adicional (opcional)
+ * @returns {Promise<boolean>}
+ */
+async function reportarError(error) {
+  const apiBaseUrl = process.env.API_BASE_URL;
+  if (!apiBaseUrl) return false;
+
+  const consoleId = obtenerConsoleId();
+
+  try {
+    const payload = {
+      tipo_error: error.tipo || TipoError.OTRO,
+      severidad: error.severidad || Severidad.ERROR,
+      mensaje: error.mensaje,
+      stack_trace: error.error?.stack || null,
+      canal_id: error.canalId || null,
+      video_id: error.videoId || null,
+      contexto_json: {
+        timestamp_error: new Date().toISOString(),
+        ...error.contexto
+      }
+    };
+
+    const url = `${apiBaseUrl}/consolas/${consoleId}/errores`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      console.error(`⚠️  Error al reportar error (${response.status})`);
+      return false;
+    }
+
+    console.log(`📝 Error reportado: ${error.tipo} - ${error.severidad}`);
+    return true;
+
+  } catch (err) {
+    console.error('⚠️  Fallo al reportar error:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Reportar publicación exitosa
+ * @param {Object} publicacion - Información de la publicación
+ * @param {string} publicacion.videoId - ID del video
+ * @param {string} publicacion.canalId - ID del canal
+ * @param {string} publicacion.plataforma - Plataforma (youtube, facebook, etc.)
+ * @param {string} publicacion.url - URL de la publicación
+ * @param {number} [publicacion.duracionSegundos] - Duración del proceso en segundos
+ * @param {Object} [publicacion.metadata] - Metadata adicional
+ * @returns {Promise<boolean>}
+ */
+async function reportarPublicacion(publicacion) {
+  const apiBaseUrl = process.env.API_BASE_URL;
+  if (!apiBaseUrl) return false;
+
+  const consoleId = obtenerConsoleId();
+
+  try {
+    const payload = {
+      video_id: publicacion.videoId,
+      canal_id: publicacion.canalId,
+      plataforma: publicacion.plataforma,
+      url_publicacion: publicacion.url,
+      duracion_proceso_segundos: publicacion.duracionSegundos || 0,
+      metadata: {
+        timestamp_publicacion: new Date().toISOString(),
+        ...publicacion.metadata
+      }
+    };
+
+    const url = `${apiBaseUrl}/consolas/${consoleId}/publicacion`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      console.error(`⚠️  Error al reportar publicación (${response.status})`);
+      return false;
+    }
+
+    console.log(`✅ Publicación reportada: ${publicacion.plataforma} - ${publicacion.url}`);
+    return true;
+
+  } catch (error) {
+    console.error('⚠️  Fallo al reportar publicación:', error.message);
+    return false;
+  }
+}
+
+/**
  * Cambiar estado de la consola
  * @param {string} nuevoEstado - Nuevo estado (usar EstadoConsola)
  * @param {Object} opciones - Opciones adicionales (videoEnProceso, error)
@@ -308,8 +437,12 @@ function detenerHeartbeat(intervalId) {
 
 module.exports = {
   EstadoConsola,
+  TipoError,
+  Severidad,
   iniciarHeartbeat,
   detenerHeartbeat,
   cambiarEstado,
-  obtenerConsoleId
+  obtenerConsoleId,
+  reportarError,
+  reportarPublicacion
 };

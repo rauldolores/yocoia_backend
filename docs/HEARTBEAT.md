@@ -110,6 +110,62 @@ Content-Type: application/json
 }
 ```
 
+### Reportar Error
+
+```
+POST /api/consolas/{consoleId}/errores
+Content-Type: application/json
+
+{
+  "tipo_error": "upload",
+  "severidad": "error",
+  "mensaje": "Error al subir video a YouTube: Quota exceeded",
+  "stack_trace": "Error: Upload failed\n    at uploadVideo...",
+  "canal_id": "uuid-del-canal-opcional",
+  "video_id": "uuid-del-video-opcional",
+  "contexto_json": {
+    "video_titulo": "Mi Video #123",
+    "intento": 2,
+    "timestamp_error": "2024-12-03T10:35:22Z"
+  }
+}
+```
+
+**Tipos de error:**
+- `api` - Errores de API externa (YouTube, Facebook, etc.)
+- `network` - Problemas de red/conectividad
+- `auth` - Problemas de autenticación
+- `processing` - Errores al procesar el video
+- `upload` - Errores al subir el video
+- `database` - Errores de base de datos
+- `otro` - Otros errores
+
+**Severidades:**
+- `info` - Informativo, no es error real
+- `warning` - Advertencia, puede continuar
+- `error` - Error que impide la operación actual
+- `critical` - Error crítico que detiene la consola
+
+### Reportar Publicación Exitosa
+
+```
+POST /api/consolas/{consoleId}/publicacion
+Content-Type: application/json
+
+{
+  "video_id": "uuid-del-video",
+  "canal_id": "uuid-del-canal",
+  "plataforma": "youtube",
+  "url_publicacion": "https://youtube.com/watch?v=abc123",
+  "duracion_proceso_segundos": 245,
+  "metadata": {
+    "video_id_plataforma": "abc123",
+    "titulo": "Mi Video #123",
+    "timestamp_publicacion": "2024-12-03T10:40:00Z"
+  }
+}
+```
+
 ## Uso Programático
 
 ### Cambiar Estado Manualmente
@@ -129,6 +185,55 @@ cambiarEstado(EstadoConsola.ERROR, {
 
 // Volver a esperando
 cambiarEstado(EstadoConsola.ESPERANDO);
+```
+
+### Reportar Errores
+
+```javascript
+const { reportarError, TipoError, Severidad } = require('./services/heartbeat');
+
+// Reportar error de API
+await reportarError({
+  tipo: TipoError.API,
+  severidad: Severidad.ERROR,
+  mensaje: 'Error al llamar API de YouTube',
+  error: errorObject, // Objeto Error original
+  canalId: 'uuid-canal',
+  videoId: 'uuid-video',
+  contexto: {
+    api: 'youtube',
+    endpoint: '/upload',
+    intentos: 3
+  }
+});
+
+// Reportar error crítico
+await reportarError({
+  tipo: TipoError.PROCESSING,
+  severidad: Severidad.CRITICAL,
+  mensaje: 'Error crítico que detiene el proceso',
+  error: errorObject
+});
+```
+
+### Reportar Publicaciones Exitosas
+
+```javascript
+const { reportarPublicacion } = require('./services/heartbeat');
+
+// Reportar publicación en YouTube
+await reportarPublicacion({
+  videoId: 'uuid-del-video',
+  canalId: 'uuid-del-canal',
+  plataforma: 'youtube',
+  url: 'https://youtube.com/watch?v=abc123',
+  duracionSegundos: 245,
+  metadata: {
+    video_id_plataforma: 'abc123',
+    titulo: 'Mi Video',
+    views_iniciales: 0
+  }
+});
 ```
 
 ### Obtener Console ID
