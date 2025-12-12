@@ -52,7 +52,6 @@ async function generarGuionesDesdeIdeas() {
     let errores = 0;
     const MAX_IDEAS_POR_EJECUCION = 10;
 
-  try {
     // Procesar ideas una por una para evitar que la lista en memoria quede desactualizada
     for (let i = 0; i < MAX_IDEAS_POR_EJECUCION; i++) {
       // Consultar la próxima idea pendiente en cada iteración

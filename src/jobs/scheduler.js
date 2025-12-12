@@ -25,7 +25,6 @@ async function programarPublicaciones() {
     console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: TIMEZONE }));
     console.log('='.repeat(80) + '\n');
 
-  try {
     // 1. Obtener videos pendientes de programar
     console.log('📋 Consultando videos pendientes de programar...');
     const videos = await obtenerVideosPendientesProgramar();
