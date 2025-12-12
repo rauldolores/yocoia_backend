@@ -8,18 +8,29 @@ const { descargarVideoParaPublicar } = require('../database');
 const { publicarEnYouTube, publicarEnFacebook } = require('../services/publishing');
 const { reportarError, reportarPublicacion, TipoError, Severidad } = require('../services/heartbeat');
 
+// Lock para evitar ejecuciones concurrentes
+let isPublishingToSocial = false;
+
 /**
  * Proceso principal de publicación en redes sociales
  */
 async function publicarEnRedesSociales() {
-  console.log('\n' + '='.repeat(80));
-  console.log('📱 INICIANDO PUBLICACIÓN EN REDES SOCIALES');
-  console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: TIMEZONE }));
-  console.log('='.repeat(80) + '\n');
+  // Verificar si ya hay una ejecución en progreso
+  if (isPublishingToSocial) {
+    console.log('\n⏸️  Publicación en redes sociales ya en progreso, omitiendo esta ejecución...\n');
+    return;
+  }
+
+  // Marcar como en progreso
+  isPublishingToSocial = true;
 
   const tempPublicacion = path.join(TEMP_DIR, `publicacion_${Date.now()}`);
 
   try {
+    console.log('\n' + '='.repeat(80));
+    console.log('📱 INICIANDO PUBLICACIÓN EN REDES SOCIALES');
+    console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: TIMEZONE }));
+    console.log('='.repeat(80) + '\n');
     // Crear directorio temporal
     if (!fs.existsSync(tempPublicacion)) {
       fs.mkdirSync(tempPublicacion, { recursive: true });
@@ -210,6 +221,9 @@ async function publicarEnRedesSociales() {
         console.error('⚠️  Error al limpiar directorio temporal:', cleanError.message);
       }
     }
+    
+    // Liberar lock siempre
+    isPublishingToSocial = false;
   }
 }
 

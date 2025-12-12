@@ -2,6 +2,9 @@ const { supabase, TIMEZONE, CHANNEL_FILTER } = require('../../config');
 const { obtenerFechaMexico, obtenerTimestampMexico } = require('../../utils/date');
 const { generarGuionDesdeAPI } = require('./api-client');
 
+// Lock para evitar ejecuciones concurrentes
+let isGeneratingGuiones = false;
+
 /**
  * Actualizar idea con el guión generado
  * @param {string} ideaId - ID de la idea
@@ -30,14 +33,24 @@ async function actualizarIdeaConGuion(ideaId, guionId) {
  * Proceso principal de generación de guiones desde ideas
  */
 async function generarGuionesDesdeIdeas() {
-  console.log('\n' + '='.repeat(80));
-  console.log('💡 INICIANDO GENERACIÓN DE GUIONES DESDE IDEAS');
-  console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: TIMEZONE }));
-  console.log('='.repeat(80) + '\n');
+  // Verificar si ya hay una ejecución en progreso
+  if (isGeneratingGuiones) {
+    console.log('\n⏸️  Generación de guiones ya en progreso, omitiendo esta ejecución...\n');
+    return;
+  }
 
-  let generados = 0;
-  let errores = 0;
-  const MAX_IDEAS_POR_EJECUCION = 10;
+  // Marcar como en progreso
+  isGeneratingGuiones = true;
+
+  try {
+    console.log('\n' + '='.repeat(80));
+    console.log('💡 INICIANDO GENERACIÓN DE GUIONES DESDE IDEAS');
+    console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: TIMEZONE }));
+    console.log('='.repeat(80) + '\n');
+
+    let generados = 0;
+    let errores = 0;
+    const MAX_IDEAS_POR_EJECUCION = 10;
 
   try {
     // Procesar ideas una por una para evitar que la lista en memoria quede desactualizada
@@ -133,6 +146,9 @@ async function generarGuionesDesdeIdeas() {
   } catch (error) {
     console.error('\n❌ ERROR EN GENERACIÓN DE GUIONES:', error.message);
     console.error('Stack trace:', error.stack);
+  } finally {
+    // Liberar lock siempre, incluso si hay error
+    isGeneratingGuiones = false;
   }
 }
 

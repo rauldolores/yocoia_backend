@@ -3,14 +3,27 @@ const { obtenerFechaMexico } = require('../utils/date');
 const { obtenerVideosPendientesProgramar } = require('../database');
 const { encontrarProximaHoraDisponible, programarPublicacionVideo } = require('../services/publishing');
 
+// Lock para evitar ejecuciones concurrentes
+let isSchedulingPublications = false;
+
 /**
  * Proceso principal de programación de publicaciones
  */
 async function programarPublicaciones() {
-  console.log('\n' + '='.repeat(80));
-  console.log('📅 INICIANDO PROGRAMACIÓN DE PUBLICACIONES');
-  console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: TIMEZONE }));
-  console.log('='.repeat(80) + '\n');
+  // Verificar si ya hay una ejecución en progreso
+  if (isSchedulingPublications) {
+    console.log('\n⏸️  Programación de publicaciones ya en progreso, omitiendo esta ejecución...\n');
+    return;
+  }
+
+  // Marcar como en progreso
+  isSchedulingPublications = true;
+
+  try {
+    console.log('\n' + '='.repeat(80));
+    console.log('📅 INICIANDO PROGRAMACIÓN DE PUBLICACIONES');
+    console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: TIMEZONE }));
+    console.log('='.repeat(80) + '\n');
 
   try {
     // 1. Obtener videos pendientes de programar
@@ -59,6 +72,9 @@ async function programarPublicaciones() {
   } catch (error) {
     console.error('\n❌ ERROR EN PROGRAMACIÓN:', error.message);
     console.error('Stack trace:', error.stack);
+  } finally {
+    // Liberar lock siempre
+    isSchedulingPublications = false;
   }
 }
 

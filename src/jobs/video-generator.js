@@ -15,6 +15,9 @@ const {
 } = require('../database');
 const { EstadoConsola, cambiarEstado, reportarError, TipoError, Severidad } = require('../services/heartbeat');
 
+// Lock para evitar ejecuciones concurrentes
+let isProcessingVideos = false;
+
 /**
  * Ordenar imágenes por número de escena
  * @param {Array} imagenes - Array de objetos de imagen
@@ -235,12 +238,21 @@ async function procesarGuionIndividual(guion) {
  * Función principal que ejecuta todo el proceso de generación de videos
  */
 async function procesarVideos() {
-  console.log('\n' + '='.repeat(80));
-  console.log('🎬 INICIANDO PROCESO DE GENERACIÓN DE VIDEOS');
-  console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' }));
-  console.log('='.repeat(80) + '\n');
+  // Verificar si ya hay una ejecución en progreso
+  if (isProcessingVideos) {
+    console.log('\n⏸️  Generación de videos ya en progreso, omitiendo esta ejecución...\n');
+    return;
+  }
+
+  // Marcar como en progreso
+  isProcessingVideos = true;
 
   try {
+    console.log('\n' + '='.repeat(80));
+    console.log('🎬 INICIANDO PROCESO DE GENERACIÓN DE VIDEOS');
+    console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' }));
+    console.log('='.repeat(80) + '\n');
+
     // 1. Crear directorios necesarios
     crearDirectorios();
 
@@ -318,6 +330,9 @@ async function procesarVideos() {
   } finally {
     // Limpiar archivos temporales
     limpiarTemp();
+    
+    // Liberar lock siempre
+    isProcessingVideos = false;
   }
 }
 
