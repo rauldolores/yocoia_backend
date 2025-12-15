@@ -12,10 +12,14 @@ const { procesarVideos } = require('./video-generator');
 const { programarPublicaciones } = require('./scheduler');
 const { publicarEnRedesSociales } = require('./publisher');
 const { generarGuionesDesdeIdeas } = require('./guion-generator');
+const { validarYGenerarIdeas } = require('./ideas-validator');
+const { generarAssets } = require('./assets-generator');
 
 module.exports = {
   procesarVideos,
   programarPublicaciones,
   publicarEnRedesSociales,
-  generarGuionesDesdeIdeas
+  generarGuionesDesdeIdeas,
+  validarYGenerarIdeas,
+  generarAssets
 };

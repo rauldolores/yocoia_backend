@@ -15,7 +15,9 @@ const {
   procesarVideos,
   programarPublicaciones,
   publicarEnRedesSociales,
-  generarGuionesDesdeIdeas
+  generarGuionesDesdeIdeas,
+  validarYGenerarIdeas,
+  generarAssets
 } = require('./jobs');
 const { iniciarHeartbeat, detenerHeartbeat, EstadoConsola, cambiarEstado } = require('./services/heartbeat');
 
@@ -155,6 +157,28 @@ function iniciarCron() {
     console.log(`✅ Cron job ${++cronCount}: Generación de guiones desde ideas (cada ${minutes} minutos)`);
   } else {
     console.log('⏸️  Cron job: Generación de guiones desde ideas (DESHABILITADO)');
+  }
+
+  // Cron 5: Validación y generación de ideas
+  if (CRON_CONFIG.ideasValidation.enabled) {
+    const minutes = CRON_CONFIG.ideasValidation.minutes;
+    cron.schedule(`*/${minutes} * * * *`, () => {
+      validarYGenerarIdeas();
+    });
+    console.log(`✅ Cron job ${++cronCount}: Validación y generación de ideas (cada ${minutes} minutos)`);
+  } else {
+    console.log('⏸️  Cron job: Validación y generación de ideas (DESHABILITADO)');
+  }
+
+  // Cron 6: Generación de assets (audio e imágenes)
+  if (CRON_CONFIG.assetsGeneration.enabled) {
+    const minutes = CRON_CONFIG.assetsGeneration.minutes;
+    cron.schedule(`*/${minutes} * * * *`, () => {
+      generarAssets();
+    });
+    console.log(`✅ Cron job ${++cronCount}: Generación de assets (cada ${minutes} minutos)`);
+  } else {
+    console.log('⏸️  Cron job: Generación de assets (DESHABILITADO)');
   }
   
   if (cronCount === 0) {

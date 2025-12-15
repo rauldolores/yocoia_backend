@@ -201,8 +201,24 @@ const CRON_CONFIG = {
   scriptGeneration: {
     enabled: process.env.CRON_SCRIPT_GENERATION_ENABLED === 'true',
     minutes: parseInt(process.env.CRON_SCRIPT_GENERATION_MINUTES) || 7
+  },
+  ideasValidation: {
+    enabled: process.env.CRON_IDEAS_VALIDATION_ENABLED === 'true',
+    minutes: parseInt(process.env.CRON_IDEAS_VALIDATION_MINUTES) || 5
+  },
+  assetsGeneration: {
+    enabled: process.env.CRON_ASSETS_GENERATION_ENABLED === 'true',
+    minutes: parseInt(process.env.CRON_ASSETS_GENERATION_MINUTES) || 8
   }
 };
+
+// =============================================================================
+// UMBRALES DE STOCK
+// =============================================================================
+
+const UMBRAL_MINIMO_IDEAS = parseInt(process.env.UMBRAL_MINIMO_IDEAS) || 20;
+const UMBRAL_MINIMO_GUIONES = parseInt(process.env.UMBRAL_MINIMO_GUIONES) || 5;
+const UMBRAL_VIDEOS_LISTOS = parseInt(process.env.UMBRAL_VIDEOS_LISTOS) || 5;
 
 // =============================================================================
 // EXPORTS
@@ -240,6 +256,9 @@ module.exports = {
   TIMEZONE,
   CHANNEL_FILTER,
   CRON_CONFIG,
+  UMBRAL_MINIMO_IDEAS,
+  UMBRAL_MINIMO_GUIONES,
+  UMBRAL_VIDEOS_LISTOS,
   
   // Funciones
   cargarFiltroCanales
