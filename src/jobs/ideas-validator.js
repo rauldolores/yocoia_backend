@@ -55,7 +55,8 @@ async function contarGuionesGenerados(canalId) {
     .from('guiones')
     .select('id')
     .eq('canal_id', canalId)
-    .eq('estado', 'generado');
+    .eq('estado', 'generado')
+    .eq('tipo_guion', 'corto');
 
   if (errorGuiones) {
     throw new Error(`Error al obtener guiones: ${errorGuiones.message}`);

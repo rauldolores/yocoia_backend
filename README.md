@@ -6,6 +6,8 @@ Sistema de generación y publicación automatizada de videos para redes sociales
 
 El sistema incluye 6 procesos automatizados (cron jobs):
 
+**📝 Nota importante:** Todos los procesos trabajan exclusivamente con **guiones cortos** (`tipo_guion = 'corto'`).
+
 1. **Generación de Videos** - Procesa guiones y genera videos con FFmpeg
 2. **Programación de Publicaciones** - Asigna horarios de publicación a videos listos
 3. **Publicación en Redes Sociales** - Publica videos en YouTube y Facebook
@@ -17,7 +19,8 @@ El sistema incluye 6 procesos automatizados (cron jobs):
 
 Este proceso valida periódicamente dos aspectos críticos del pipeline de producción.
 
-**⚙️ Solo se ejecuta en canales con `generacion_automatica = true`**
+**⚙️ Solo se ejecuta en canales con `generacion_automatica = true`**  
+**📝 Solo cuenta guiones con `tipo_guion = 'corto'`**
 
 **1. Stock de guiones generados (mínimo 5 por canal)**
 - Si un canal tiene menos de 5 guiones en estado `generado`
@@ -43,7 +46,8 @@ CRON_IDEAS_VALIDATION_MINUTES=5
 
 Este proceso genera los recursos multimedia necesarios para los guiones usando un **sistema de gestión de stock**.
 
-**⚙️ Solo se ejecuta en canales con `generacion_automatica = true`**
+**⚙️ Solo se ejecuta en canales con `generacion_automatica = true`**  
+**📝 Solo procesa guiones con `tipo_guion = 'corto'`**
 
 **Sistema de Stock:**
 - Mantiene un umbral configurable de guiones listos por canal (default: 5)

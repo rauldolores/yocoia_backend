@@ -26,7 +26,8 @@ async function contarVideosListos(canalId) {
   const { data: guiones, error: errorGuiones } = await supabase
     .from('guiones')
     .select('id')
-    .eq('canal_id', canalId);
+    .eq('canal_id', canalId)
+    .eq('tipo_guion', 'corto');
 
   if (errorGuiones) {
     console.error(`   ❌ Error al obtener guiones del canal: ${errorGuiones.message}`);
@@ -77,6 +78,7 @@ async function obtenerGuionesParaAssets() {
       )
     `)
     .eq('estado', 'generado')
+    .eq('tipo_guion', 'corto')
     .order('created_at', { ascending: true });
 
   // Aplicar filtros de canales si está habilitado
@@ -277,7 +279,8 @@ async function cambiarEstadoGuion(guionId, nuevoEstado) {
   const { error } = await supabase
     .from('guiones')
     .update({ estado: nuevoEstado })
-    .eq('id', guionId);
+    .eq('id', guionId)
+    .eq('tipo_guion', 'corto');
 
   if (error) {
     throw new Error(`Error al cambiar estado: ${error.message}`);

@@ -2,11 +2,12 @@
 
 ## Descripción
 
-Este proceso automático genera los recursos multimedia (audio e imágenes) necesarios para los guiones que están en estado `generado` y aún no tienen video asociado. **Solo procesa canales con `generacion_automatica = true`** e implementa un sistema de gestión de stock que mantiene un número configurable de guiones listos para producir video, procesando solo lo necesario para mantener el pipeline activo.
+Este proceso automático genera los recursos multimedia (audio e imágenes) necesarios para los guiones que están en estado `generado` y aún no tienen video asociado. **Solo procesa canales con `generacion_automatica = true`** y trabaja exclusivamente con **guiones cortos** (`tipo_guion = 'corto'`). Implementa un sistema de gestión de stock que mantiene un número configurable de guiones listos para producir video, procesando solo lo necesario para mantener el pipeline activo.
 
 ## Características
 
 - **Filtrado automático**: Solo procesa canales con `generacion_automatica = true`
+- **Solo guiones cortos**: Trabaja exclusivamente con `tipo_guion = 'corto'`
 - **Ejecución periódica**: Configurable cada N minutos (default: 8 minutos)
 - **Gestión de stock**: Solo procesa guiones hasta alcanzar el umbral de videos listos
 - **Por canal**: Controla el stock independientemente para cada canal

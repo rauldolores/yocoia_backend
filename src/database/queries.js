@@ -25,6 +25,7 @@ async function obtenerGuionesPendientes(filtroCanales = null) {
         canales(id, nombre)
       `)
       .eq('estado', 'producir_video')
+      .eq('tipo_guion', 'corto')
       .order('created_at', { ascending: true });
 
     // Aplicar filtros de canales si está habilitado
@@ -242,7 +243,8 @@ async function actualizarEstadoGuion(guionId, nuevoEstado) {
         estado: nuevoEstado,
         updated_at: obtenerTimestampMexico()
       })
-      .eq('id', guionId);
+      .eq('id', guionId)
+      .eq('tipo_guion', 'corto');
 
     if (error) throw error;
     console.log(`✅ Estado del guion actualizado a: ${nuevoEstado}`);

@@ -10,6 +10,7 @@ Este proceso automático valida periódicamente que cada canal cumpla con dos re
 ## Características
 
 - **Filtrado automático**: Solo procesa canales con `generacion_automatica = true`
+- **Solo guiones cortos**: Trabaja exclusivamente con `tipo_guion = 'corto'`
 - **Ejecución periódica**: Configurable cada N minutos (default: 5 minutos)
 - **No concurrente**: Usa un lock para prevenir ejecuciones simultáneas
 - **Validación dual**: Verifica guiones e ideas en cada ejecución
