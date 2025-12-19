@@ -13,6 +13,7 @@ const { limpiarTemp } = require('./utils/file');
 const { CRON_CONFIG, CHANNEL_FILTER, HORAS_PUBLICACION, MINUTOS_DESFACE_MIN, MINUTOS_DESFACE_MAX, TIMEZONE, supabase } = require('./config');
 const {
   procesarVideos,
+  procesarVideosLargos,
   programarPublicaciones,
   publicarEnRedesSociales,
   generarGuionesDesdeIdeas,
@@ -179,6 +180,17 @@ function iniciarCron() {
     console.log(`✅ Cron job ${++cronCount}: Generación de assets (cada ${minutes} minutos)`);
   } else {
     console.log('⏸️  Cron job: Generación de assets (DESHABILITADO)');
+  }
+
+  // Cron 7: Generación de videos largos
+  if (CRON_CONFIG.longVideoGeneration.enabled) {
+    const minutes = CRON_CONFIG.longVideoGeneration.minutes;
+    cron.schedule(`*/${minutes} * * * *`, () => {
+      procesarVideosLargos();
+    });
+    console.log(`✅ Cron job ${++cronCount}: Generación de videos largos (cada ${minutes} minutos)`);
+  } else {
+    console.log('⏸️  Cron job: Generación de videos largos (DESHABILITADO)');
   }
   
   if (cronCount === 0) {

@@ -18,6 +18,7 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
   console.log('   🔍 DEBUG - video.metadata:', JSON.stringify(video.metadata, null, 2));
 
   let rutaVideoConMusica = null; // Declarar fuera del try para acceso en finally
+  let miniaturaPath = null; // Para videos largos
 
   try {
     const credenciales = canal.credenciales?.youtube;
@@ -25,19 +26,49 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
       throw new Error('No hay credenciales de YouTube configuradas para este canal');
     }
 
+    // Detectar tipo de video
+    const esVideoLargo = video.guiones?.tipo_contenido === 'video_largo';
+    console.log(`   📹 Tipo de video: ${esVideoLargo ? 'LARGO (16:9)' : 'CORTO (9:16 Shorts)'}`);
+
     let rutaVideoFinal = rutaVideoLocal;
 
-    // Procesar música de fondo si está configurada
-    if (canal.musica_fondo_youtube_url) {
-      console.log('   🎵 Canal tiene música de fondo configurada');
-      rutaVideoConMusica = rutaVideoLocal.replace('.mp4', '_con_musica.mp4');
+    // Procesar música de fondo según tipo de video
+    if (esVideoLargo) {
+      // Videos largos: música al 20% desde musica_fondo_youtube_largos_url
+      if (canal.musica_fondo_youtube_largos_url) {
+        console.log('   🎵 Agregando música de fondo para video largo (20% volumen)');
+        rutaVideoConMusica = rutaVideoLocal.replace('.mp4', '_con_musica.mp4');
+        
+        const { agregarMusicaDeFondo } = require('../audio');
+        rutaVideoFinal = await agregarMusicaDeFondo(
+          rutaVideoLocal,
+          canal.musica_fondo_youtube_largos_url,
+          rutaVideoConMusica,
+          0.20 // 20% de volumen
+        );
+      }
       
-      const { agregarMusicaDeFondo } = require('../audio');
-      rutaVideoFinal = await agregarMusicaDeFondo(
-        rutaVideoLocal,
-        canal.musica_fondo_youtube_url,
-        rutaVideoConMusica
-      );
+      // Descargar miniatura si existe
+      if (video.guiones?.miniatura_url) {
+        console.log('   🖼️  Descargando miniatura personalizada...');
+        miniaturaPath = rutaVideoLocal.replace('.mp4', '_miniatura.jpg');
+        const { descargarArchivo } = require('../../utils/file');
+        await descargarArchivo(video.guiones.miniatura_url, miniaturaPath);
+      }
+    } else {
+      // Videos cortos: música al 40% (default) desde musica_fondo_youtube_url
+      if (canal.musica_fondo_youtube_url) {
+        console.log('   🎵 Agregando música de fondo para video corto (40% volumen)');
+        rutaVideoConMusica = rutaVideoLocal.replace('.mp4', '_con_musica.mp4');
+        
+        const { agregarMusicaDeFondo } = require('../audio');
+        rutaVideoFinal = await agregarMusicaDeFondo(
+          rutaVideoLocal,
+          canal.musica_fondo_youtube_url,
+          rutaVideoConMusica
+          // Usa el volumen por defecto (0.4 = 40%)
+        );
+      }
     }
 
     // Configurar OAuth2
@@ -81,10 +112,15 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
     // Limpiar y validar el título
     tituloYouTube = tituloYouTube.trim();
 
-    // Agregar #Shorts si no lo tiene
-    let tituloFinal = tituloYouTube.includes('#Shorts') 
-      ? tituloYouTube 
-      : `${tituloYouTube} #Shorts`;
+    // Agregar #Shorts solo si es video corto
+    let tituloFinal;
+    if (esVideoLargo) {
+      tituloFinal = tituloYouTube; // Videos largos: sin #Shorts
+    } else {
+      tituloFinal = tituloYouTube.includes('#Shorts') 
+        ? tituloYouTube 
+        : `${tituloYouTube} #Shorts`;
+    }
 
     // YouTube tiene límite de 100 caracteres para títulos
     const MAX_TITULO_LENGTH = 100;
@@ -139,13 +175,15 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
     const fileSize = fs.statSync(rutaVideoFinal).size;
     console.log(`   📦 Tamaño del archivo: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
 
-    // Preparar metadata del video
+    // Preparar metadata del video según tipo
     const snippet = {
       title: tituloFinal,
       description: video.descripcion || '',
       categoryId: '22',
       defaultLanguage: 'es',
-      tags: ['Shorts', 'Short', 'Vertical']
+      tags: esVideoLargo 
+        ? ['Video', 'Documental', 'Historia'] // Tags para videos largos
+        : ['Shorts', 'Short', 'Vertical']     // Tags para Shorts
     };
 
     console.log(`   ⬆️  Subiendo video a YouTube...`);
@@ -168,8 +206,30 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
     const videoId = response.data.id;
     
     console.log(`   ✅ Video subido exitosamente`);
-    console.log(`   🔗 URL: https://youtube.com/watch?v=${videoId}`);
-    console.log(`   🔗 URL Short: https://youtube.com/shorts/${videoId}`);
+    
+    // Subir miniatura si es video largo y existe
+    if (esVideoLargo && miniaturaPath && fs.existsSync(miniaturaPath)) {
+      console.log('   🖼️  Subiendo miniatura personalizada...');
+      try {
+        await youtube.thumbnails.set({
+          videoId: videoId,
+          media: {
+            body: fs.createReadStream(miniaturaPath)
+          }
+        });
+        console.log('   ✅ Miniatura subida exitosamente');
+      } catch (error) {
+        console.error('   ⚠️  Error al subir miniatura:', error.message);
+        // No lanzar error, la miniatura es opcional
+      }
+    }
+    
+    if (esVideoLargo) {
+      console.log(`   🔗 URL: https://youtube.com/watch?v=${videoId}`);
+    } else {
+      console.log(`   🔗 URL: https://youtube.com/watch?v=${videoId}`);
+      console.log(`   🔗 URL Short: https://youtube.com/shorts/${videoId}`);
+    }
 
     return videoId;
 
@@ -184,6 +244,11 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
     if (rutaVideoConMusica && fs.existsSync(rutaVideoConMusica)) {
       fs.unlinkSync(rutaVideoConMusica);
       console.log('   🧹 Video temporal con música eliminado');
+    }
+    // Limpiar miniatura temporal
+    if (miniaturaPath && fs.existsSync(miniaturaPath)) {
+      fs.unlinkSync(miniaturaPath);
+      console.log('   🧹 Miniatura temporal eliminada');
     }
   }
 }

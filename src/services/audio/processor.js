@@ -12,9 +12,10 @@ const { descargarArchivo, obtenerDuracionAudio } = require('../../utils/file');
  * @param {string} rutaVideoOriginal - Ruta del video original
  * @param {string} urlMusicaFondo - URL de la música de fondo (MP3)
  * @param {string} rutaVideoSalida - Ruta del video con música
+ * @param {number} volumen - Volumen de la música (0.0 a 1.0), por defecto 0.4 (40%)
  * @returns {Promise<string>} - Ruta del video con música
  */
-async function agregarMusicaDeFondo(rutaVideoOriginal, urlMusicaFondo, rutaVideoSalida) {
+async function agregarMusicaDeFondo(rutaVideoOriginal, urlMusicaFondo, rutaVideoSalida, volumen = 0.4) {
   return new Promise(async (resolve, reject) => {
     try {
       console.log('🎵 Agregando música de fondo...');
@@ -42,8 +43,8 @@ async function agregarMusicaDeFondo(rutaVideoOriginal, urlMusicaFondo, rutaVideo
         .complexFilter([
           // Recortar música a la duración del video
           `[1:a]atrim=0:${duracionVideo},asetpts=PTS-STARTPTS[musica_recortada]`,
-          // Reducir volumen de música al 40% y aplicar fade out
-          `[musica_recortada]volume=0.4,afade=t=out:st=${inicioFadeOut}:d=${duracionFadeOut}[musica_ajustada]`,
+          // Reducir volumen de música y aplicar fade out
+          `[musica_recortada]volume=${volumen},afade=t=out:st=${inicioFadeOut}:d=${duracionFadeOut}[musica_ajustada]`,
           // Mezclar audio original con música de fondo
           `[0:a][musica_ajustada]amix=inputs=2:duration=first:dropout_transition=2[audio_final]`
         ])

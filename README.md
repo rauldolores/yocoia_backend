@@ -4,16 +4,53 @@ Sistema de generación y publicación automatizada de videos para redes sociales
 
 ## Procesos Automatizados
 
-El sistema incluye 6 procesos automatizados (cron jobs):
+El sistema incluye 7 procesos automatizados (cron jobs):
 
-**📝 Nota importante:** Todos los procesos trabajan exclusivamente con **guiones cortos** (`tipo_guion = 'corto'`).
+**📝 Nota importante:** Los procesos de videos cortos trabajan exclusivamente con **guiones cortos** (`tipo_guion = 'corto'`). El proceso de videos largos trabaja con **guiones de video largo** (`tipo_guion = 'video_largo'`).
 
-1. **Generación de Videos** - Procesa guiones y genera videos con FFmpeg
-2. **Programación de Publicaciones** - Asigna horarios de publicación a videos listos
-3. **Publicación en Redes Sociales** - Publica videos en YouTube y Facebook
-4. **Generación de Guiones** - Convierte ideas en guiones estructurados
-5. **Validación de Ideas** - Verifica stock de ideas y genera nuevas cuando es necesario
-6. **Generación de Assets** - Genera audio e imágenes para guiones ✨ NUEVO
+1. **Generación de Videos Cortos** - Procesa guiones cortos y genera videos con FFmpeg
+2. **Generación de Videos Largos** - Procesa guiones largos por segmentos y los une ✨ NUEVO
+3. **Programación de Publicaciones** - Asigna horarios de publicación a videos listos
+4. **Publicación en Redes Sociales** - Publica videos en YouTube y Facebook
+5. **Generación de Guiones** - Convierte ideas en guiones estructurados
+6. **Validación de Ideas** - Verifica stock de ideas y genera nuevas cuando es necesario
+7. **Generación de Assets** - Genera audio e imágenes para guiones
+
+### Generación de Videos Largos
+
+Este proceso genera videos largos ensamblando múltiples segmentos.
+
+**⚙️ Solo se ejecuta en canales con `generacion_automatica = true`**  
+**📝 Solo procesa guiones con `tipo_guion = 'video_largo'`**
+
+**Funcionamiento:**
+- Obtiene guiones largos en estado `producir_video`
+- Lee las secciones del guion desde la tabla `secciones_guion` (ordenadas)
+- Para cada sección:
+  - Obtiene audio e imágenes desde `media_assets` (llave: guion_id + seccion_id)
+  - Calcula duración por imagen: `duracion_audio / cantidad_imagenes`
+  - Genera video del segmento con paneo en imágenes (sin subtítulos)
+  - Formato 16:9 (1920x1080)
+  - Aplica música de fondo al 10% de volumen (desde `canales.musica_fondo_youtube_url`)
+  - Sube video del segmento a storage
+  - Actualiza `secciones_guion` con `video_url` y `storage_path`
+- Une todos los videos de secciones en orden para crear el video final
+- Sube video final a storage
+- Registra video en tabla `videos` con estado `pendiente_publicar`
+- Cambia estado del guion a `video_producido`
+
+**Configuración:**
+```bash
+CRON_VIDEO_LARGO_GENERATION_ENABLED=false
+CRON_VIDEO_LARGO_GENERATION_MINUTES=15
+```
+
+**Diferencias con videos cortos:**
+- No usa subtítulos
+- Formato 16:9 (1920x1080) vs 9:16 en cortos
+- Música de fondo al 10% (vs 20% en cortos)
+- Ensamblado por múltiples segmentos
+- Duración de imagen variable según audio del segmento
 
 ### Validación y Generación de Ideas
 

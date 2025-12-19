@@ -50,9 +50,10 @@ async function obtenerDuracionVideo(rutaVideo) {
  * @param {number} duracionPorSegmento - Duración base en segundos para cada segmento
  * @param {string} rutaSalida - Ruta del video de salida
  * @param {string} rutaASS - Ruta del archivo de subtítulos ASS (opcional)
+ * @param {Object} opciones - Opciones adicionales (formato16x9, musicaVolumen, etc)
  * @returns {Promise<string>} - Ruta del video generado
  */
-async function generarVideo(rutasMedias, rutaAudio, duracionPorSegmento, rutaSalida, rutaASS = null) {
+async function generarVideo(rutasMedias, rutaAudio, duracionPorSegmento, rutaSalida, rutaASS = null, opciones = {}) {
   return new Promise(async (resolve, reject) => {
     try {
       console.log('\n🔍 === INFORMACIÓN DE DEPURACIÓN ===');
@@ -60,10 +61,13 @@ async function generarVideo(rutasMedias, rutaAudio, duracionPorSegmento, rutaSal
       console.log(`   - Total de medias: ${rutasMedias.length}`);
       console.log(`   - Duración base por segmento: ${duracionPorSegmento.toFixed(2)}s`);
       
-      // Configuración de video
+      // Configuración de video - Soportar formato 16:9 para videos largos
       const fps = VIDEO_CONFIG.fps || 30;
-      const width = VIDEO_CONFIG.width || 1080;
-      const height = VIDEO_CONFIG.height || 1920;
+      const formato16x9 = opciones.formato16x9 || false;
+      const width = formato16x9 ? 1920 : (VIDEO_CONFIG.width || 1080);
+      const height = formato16x9 ? 1080 : (VIDEO_CONFIG.height || 1920);
+      
+      console.log(`   - Formato: ${formato16x9 ? '16:9 (1920x1080)' : '9:16 (1080x1920)'}`);
       
       // Obtener duración del audio primero
       console.log('🎵 Obteniendo duración del audio...');
@@ -217,40 +221,73 @@ async function generarVideo(rutasMedias, rutaAudio, duracionPorSegmento, rutaSal
         const outputLabel = `[v${index}]`;
         
         if (info.esImagen) {
-          // IMÁGENES: Aplicar Ken Burns con zoompan
           const duracionFrames = Math.floor(info.duracionSegmento * fps);
-          const mitadDuracion = duracionFrames / 2;
           
-          // Seleccionar patrón de paneo según el índice (se repite cada 4 medias)
-          const patron = PATRONES_PAN[index % PATRONES_PAN.length];
-          console.log(`   🖼️  Imagen ${index + 1}: Ken Burns + Paneo ${patron.nombre} (${info.duracionSegmento.toFixed(2)}s)`);
-          
-          // Calcular movimiento de paneo con easing suave (ease-in-out)
-          // Usa pow(3) para distribuir mejor el movimiento durante toda la duración
-          let paneoX, paneoY;
-          
-          if (patron.factorX !== undefined) {
-            // Paneo horizontal con easing muy pronunciado (pow 8)
-            const inicio = patron.factorX;
-            const rango = Math.abs(patron.factorX) * 2;
+          if (formato16x9) {
+            // VIDEOS LARGOS (16:9): Paneo horizontal puro sin zoom
+            // Alternamos dirección: izquierda→derecha, derecha→izquierda
+            const direccion = index % 2 === 0 ? 'L->R' : 'R->L';
+            console.log(`   🖼️  Imagen ${index + 1}: Paneo horizontal ${direccion} (${info.duracionSegmento.toFixed(2)}s)`);
             
-            paneoX = `iw/2-(iw/zoom/2) + iw*${inicio}*(1-1/zoom) + iw*${rango}*${patron.direccionX}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},8)),pow((on-${mitadDuracion})/${mitadDuracion},8))`;
-            paneoY = `ih/2-(ih/zoom/2)`;
+            // Usar tblend + overlay para simular movimiento, o mejor: loop + crop animado
+            // Primero necesitamos convertir imagen estática en video con loop
+            
+            const anchoEscalado = width * 2; // 3840 para paneo
+            const distanciaMovimiento = Math.round(width * 0.33); // 33% del ancho = 640px (paneo más lento y sutil)
+            
+            // Expresión de crop con 'n' (frame number) para movimiento
+            let cropX;
+            if (index % 2 === 0) {
+              // Izquierda → Derecha: x = n * (640 / total_frames)
+              cropX = `'min(n*${distanciaMovimiento / duracionFrames},${distanciaMovimiento})'`;
+            } else {
+              // Derecha → Izquierda: x = 640 - n * (640 / total_frames)
+              cropX = `'max(${distanciaMovimiento}-n*${distanciaMovimiento / duracionFrames},0)'`;
+            }
+            
+            // Filtro completo:
+            // 1. scale + crop: preparar imagen a 3840x1080
+            // 2. loop: convertir imagen estática en video de N frames
+            // 3. crop: recorte animado usando 'n' para coordenada X
+            // 4. fps, setsar, setpts: normalización
+            const filtro = `${inputLabel}scale=${anchoEscalado}:${height}:force_original_aspect_ratio=increase,crop=${anchoEscalado}:${height},loop=loop=${duracionFrames}:size=1:start=0,crop=${width}:${height}:${cropX}:0,fps=${fps},setsar=1,setpts=PTS-STARTPTS${outputLabel}`;
+            
+            filtros.push(filtro);
           } else {
-            // Paneo vertical con easing muy pronunciado (pow 8)
-            const inicio = patron.factorY;
-            const rango = Math.abs(patron.factorY) * 2;
+            // VIDEOS CORTOS (9:16): Aplicar Ken Burns con zoompan
+            const mitadDuracion = duracionFrames / 2;
             
-            paneoX = `iw/2-(iw/zoom/2)`;
-            paneoY = `ih/2-(ih/zoom/2) + ih*${inicio}*(1-1/zoom) + ih*${rango}*${patron.direccionY}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},8)),pow((on-${mitadDuracion})/${mitadDuracion},8))`;
+            // Seleccionar patrón de paneo según el índice (se repite cada 4 medias)
+            const patron = PATRONES_PAN[index % PATRONES_PAN.length];
+            console.log(`   🖼️  Imagen ${index + 1}: Ken Burns + Paneo ${patron.nombre} (${info.duracionSegmento.toFixed(2)}s)`);
+            
+            // Calcular movimiento de paneo con easing suave (ease-in-out)
+            // Usa pow(3) para distribuir mejor el movimiento durante toda la duración
+            let paneoX, paneoY;
+            
+            if (patron.factorX !== undefined) {
+              // Paneo horizontal con easing muy pronunciado (pow 8)
+              const inicio = patron.factorX;
+              const rango = Math.abs(patron.factorX) * 2;
+              
+              paneoX = `iw/2-(iw/zoom/2) + iw*${inicio}*(1-1/zoom) + iw*${rango}*${patron.direccionX}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},8)),pow((on-${mitadDuracion})/${mitadDuracion},8))`;
+              paneoY = `ih/2-(ih/zoom/2)`;
+            } else {
+              // Paneo vertical con easing muy pronunciado (pow 8)
+              const inicio = patron.factorY;
+              const rango = Math.abs(patron.factorY) * 2;
+              
+              paneoX = `iw/2-(iw/zoom/2)`;
+              paneoY = `ih/2-(ih/zoom/2) + ih*${inicio}*(1-1/zoom) + ih*${rango}*${patron.direccionY}*(1-1/zoom)*if(lte(on,${mitadDuracion}),(1-pow(1-on/${mitadDuracion},8)),pow((on-${mitadDuracion})/${mitadDuracion},8))`;
+            }
+            
+            // Fórmula de zoom con easing ease-in-out (pow 8)
+            // Zoom OUT (1.7x → 1.0x) primera mitad, Zoom IN (1.0x → 1.7x) segunda mitad
+            // El pow(8) distribuye: ~90% movimiento en primeros/últimos 15%, muy estático en el medio
+            const filtro = `${inputLabel}scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,zoompan=z='if(lte(on,${mitadDuracion}),1.7-0.7*(1-pow(1-on/${mitadDuracion},8)),1.0+0.7*pow((on-${mitadDuracion})/${mitadDuracion},8))':d=${duracionFrames}:x='${paneoX}':y='${paneoY}':s=${width}x${height},fps=${fps},setpts=PTS-STARTPTS${outputLabel}`;
+            
+            filtros.push(filtro);
           }
-          
-          // Fórmula de zoom con easing ease-in-out (pow 8)
-          // Zoom OUT (1.7x → 1.0x) primera mitad, Zoom IN (1.0x → 1.7x) segunda mitad
-          // El pow(8) distribuye: ~90% movimiento en primeros/últimos 15%, muy estático en el medio
-          const filtro = `${inputLabel}scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,zoompan=z='if(lte(on,${mitadDuracion}),1.7-0.7*(1-pow(1-on/${mitadDuracion},8)),1.0+0.7*pow((on-${mitadDuracion})/${mitadDuracion},8))':d=${duracionFrames}:x='${paneoX}':y='${paneoY}':s=${width}x${height},fps=${fps},setpts=PTS-STARTPTS${outputLabel}`;
-          
-          filtros.push(filtro);
         } else if (info.esVideo) {
           // VIDEOS: Solo scale, crop y normalización (sin zoompan para preservar movimiento)
           console.log(`   🎥 Video ${index + 1}: Scale + Crop (preservando movimiento) (${info.duracionSegmento.toFixed(2)}s)`);

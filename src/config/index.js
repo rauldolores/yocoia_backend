@@ -190,6 +190,10 @@ const CRON_CONFIG = {
     enabled: process.env.CRON_VIDEO_GENERATION_ENABLED === 'true',
     minutes: parseInt(process.env.CRON_VIDEO_GENERATION_MINUTES) || 10
   },
+  longVideoGeneration: {
+    enabled: process.env.CRON_VIDEO_LARGO_GENERATION_ENABLED === 'true',
+    minutes: parseInt(process.env.CRON_VIDEO_LARGO_GENERATION_MINUTES) || 15
+  },
   publicationScheduling: {
     enabled: process.env.CRON_PUBLICATION_SCHEDULING_ENABLED === 'true',
     minutes: parseInt(process.env.CRON_PUBLICATION_SCHEDULING_MINUTES) || 5

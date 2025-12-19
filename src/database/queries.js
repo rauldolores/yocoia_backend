@@ -171,12 +171,15 @@ async function obtenerVideosListosParaPublicar(filtroCanales = null) {
         guiones!inner (
           id,
           canal_id,
+          tipo_contenido,
+          miniatura_url,
           canales!inner (
             id,
             nombre,
             credenciales,
             musica_fondo_youtube_url,
-            musica_fondo_facebook_url
+            musica_fondo_facebook_url,
+            musica_fondo_youtube_largos_url
           )
         )
       `)
@@ -191,16 +194,23 @@ async function obtenerVideosListosParaPublicar(filtroCanales = null) {
     // Un video se considera "listo" si le falta YouTube o Facebook (o ambos)
     // Consideramos NULL o string vacío como "no publicado"
     let videosPendientes = (data || []).filter(video => {
+      const esVideoLargo = video.guiones?.tipo_contenido === 'video_largo';
       const tieneYouTube = video.youtube_video_id != null && video.youtube_video_id.trim() !== '';
       const tieneFacebook = video.facebook_post_id != null && video.facebook_post_id.trim() !== '';
       
-      // Si ambos ya están publicados, omitir este video
-      if (tieneYouTube && tieneFacebook) {
-        return false;
+      if (esVideoLargo) {
+        // Videos largos: solo publicar en YouTube
+        // Omitir si ya tiene youtube_video_id
+        return !tieneYouTube;
+      } else {
+        // Videos cortos: publicar en ambas plataformas
+        // Si ambos ya están publicados, omitir este video
+        if (tieneYouTube && tieneFacebook) {
+          return false;
+        }
+        // Si falta al menos una plataforma, incluir
+        return true;
       }
-      
-      // Si falta al menos una plataforma, incluir
-      return true;
     });
     
     // Aplicar filtros de canales si está habilitado
@@ -271,19 +281,33 @@ async function actualizarVideoPublicado(videoId, plataforma, externalId) {
       updates.facebook_post_id = externalId;
     }
     
-    // Marcar como publicado solo si ambas plataformas tienen ID
-    // Primero obtenemos el video actual
+    // Obtener video actual con información del guion
     const { data: videoActual } = await supabase
       .from('videos')
-      .select('youtube_video_id, facebook_post_id')
+      .select(`
+        youtube_video_id, 
+        facebook_post_id,
+        guiones!inner (
+          tipo_contenido
+        )
+      `)
       .eq('id', videoId)
       .single();
     
-    // Si después de este update ambos IDs están presentes, marcar como publicado
+    // Determinar si es video largo
+    const esVideoLargo = videoActual?.guiones?.tipo_contenido === 'video_largo';
+    
+    // Determinar IDs después de este update
     const youtubeId = plataforma === 'youtube' ? externalId : videoActual?.youtube_video_id;
     const facebookId = plataforma === 'facebook' ? externalId : videoActual?.facebook_post_id;
     
-    if (youtubeId && facebookId) {
+    // Marcar como publicado según tipo de video:
+    // - Videos largos: solo necesitan YouTube
+    // - Videos cortos: necesitan ambas plataformas
+    if (esVideoLargo && youtubeId) {
+      updates.estado = 'publicado';
+      updates.publicado_at = obtenerTimestampMexico();
+    } else if (!esVideoLargo && youtubeId && facebookId) {
       updates.estado = 'publicado';
       updates.publicado_at = obtenerTimestampMexico();
     }

@@ -123,8 +123,11 @@ async function publicarEnRedesSociales() {
           }
         }
 
-        // Publicar en Facebook (video original sin música) - solo si no está publicado
-        if (!yaPublicadoFacebook) {
+        // Detectar tipo de video
+        const esVideoLargo = video.guiones?.tipo_contenido === 'video_largo';
+
+        // Publicar en Facebook (video original sin música) - solo si no está publicado Y es video corto
+        if (!yaPublicadoFacebook && !esVideoLargo) {
           console.log('\n   📘 Publicando en Facebook...');
           const inicioFB = Date.now();
           try {
