@@ -176,14 +176,26 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
     console.log(`   📦 Tamaño del archivo: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
 
     // Preparar metadata del video según tipo
+    // Determinar tags: usar guiones.etiquetas si existe y no está vacío, sino usar tags por defecto
+    let videoTags;
+    if (video.guiones?.etiquetas && Array.isArray(video.guiones.etiquetas) && video.guiones.etiquetas.length > 0) {
+      // Usar etiquetas personalizadas del guion
+      videoTags = video.guiones.etiquetas;
+      console.log(`   🏷️  Usando etiquetas personalizadas: ${videoTags.join(', ')}`);
+    } else {
+      // Usar etiquetas por defecto según tipo de video
+      videoTags = esVideoLargo 
+        ? ['Video', 'Documental', 'Historia'] // Tags por defecto para videos largos
+        : ['Shorts', 'Short', 'Vertical'];   // Tags por defecto para Shorts
+      console.log(`   🏷️  Usando etiquetas por defecto: ${videoTags.join(', ')}`);
+    }
+    
     const snippet = {
       title: tituloFinal,
       description: video.descripcion || '',
       categoryId: '22',
       defaultLanguage: 'es',
-      tags: esVideoLargo 
-        ? ['Video', 'Documental', 'Historia'] // Tags para videos largos
-        : ['Shorts', 'Short', 'Vertical']     // Tags para Shorts
+      tags: videoTags
     };
 
     console.log(`   ⬆️  Subiendo video a YouTube...`);

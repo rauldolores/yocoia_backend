@@ -173,6 +173,7 @@ async function obtenerVideosListosParaPublicar(filtroCanales = null) {
           canal_id,
           tipo_contenido,
           miniatura_url,
+          etiquetas,
           canales!inner (
             id,
             nombre,
