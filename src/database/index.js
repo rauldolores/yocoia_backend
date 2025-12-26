@@ -24,6 +24,10 @@ const {
   subirAudioAStorage
 } = require('./storage');
 
+const {
+  obtenerMusicaAleatoria
+} = require('./musica');
+
 module.exports = {
   // Queries
   obtenerGuionesPendientes,
@@ -38,5 +42,8 @@ module.exports = {
   subirVideoAStorage,
   descargarVideoParaPublicar,
   guardarMediaAssetAudio,
-  subirAudioAStorage
+  subirAudioAStorage,
+  
+  // Música
+  obtenerMusicaAleatoria
 };

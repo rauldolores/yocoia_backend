@@ -28,47 +28,39 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
 
     // Detectar tipo de video
     const esVideoLargo = video.guiones?.tipo_contenido === 'video_largo';
+    const tipoContenido = esVideoLargo ? 'video_largo' : 'video_corto';
     console.log(`   📹 Tipo de video: ${esVideoLargo ? 'LARGO (16:9)' : 'CORTO (9:16 Shorts)'}`);
 
     let rutaVideoFinal = rutaVideoLocal;
 
     // Procesar música de fondo según tipo de video
-    if (esVideoLargo) {
-      // Videos largos: música al 20% desde musica_fondo_youtube_largos_url
-      if (canal.musica_fondo_youtube_largos_url) {
-        console.log('   🎵 Agregando música de fondo para video largo (20% volumen)');
-        rutaVideoConMusica = rutaVideoLocal.replace('.mp4', '_con_musica.mp4');
-        
-        const { agregarMusicaDeFondo } = require('../audio');
-        rutaVideoFinal = await agregarMusicaDeFondo(
-          rutaVideoLocal,
-          canal.musica_fondo_youtube_largos_url,
-          rutaVideoConMusica,
-          0.20 // 20% de volumen
-        );
-      }
+    const musicaVolumen = esVideoLargo ? 0.20 : 0.32;
+    console.log(`   🎵 Buscando música de fondo (${musicaVolumen * 100}% volumen)...`);
+    
+    const { obtenerMusicaAleatoria } = require('../../database/musica');
+    const musica = await obtenerMusicaAleatoria(tipoContenido, 'youtube');
+    
+    if (musica) {
+      console.log(`   🎵 Agregando música: "${musica.nombre}"`);
+      rutaVideoConMusica = rutaVideoLocal.replace('.mp4', '_con_musica.mp4');
       
-      // Descargar miniatura si existe
-      if (video.guiones?.miniatura_url) {
-        console.log('   🖼️  Descargando miniatura personalizada...');
-        miniaturaPath = rutaVideoLocal.replace('.mp4', '_miniatura.jpg');
-        const { descargarArchivo } = require('../../utils/file');
-        await descargarArchivo(video.guiones.miniatura_url, miniaturaPath);
-      }
+      const { agregarMusicaDeFondo } = require('../audio');
+      rutaVideoFinal = await agregarMusicaDeFondo(
+        rutaVideoLocal,
+        musica.archivo_url,
+        rutaVideoConMusica,
+        musicaVolumen
+      );
     } else {
-      // Videos cortos: música al 40% (default) desde musica_fondo_youtube_url
-      if (canal.musica_fondo_youtube_url) {
-        console.log('   🎵 Agregando música de fondo para video corto (40% volumen)');
-        rutaVideoConMusica = rutaVideoLocal.replace('.mp4', '_con_musica.mp4');
-        
-        const { agregarMusicaDeFondo } = require('../audio');
-        rutaVideoFinal = await agregarMusicaDeFondo(
-          rutaVideoLocal,
-          canal.musica_fondo_youtube_url,
-          rutaVideoConMusica
-          // Usa el volumen por defecto (0.4 = 40%)
-        );
-      }
+      console.log('   ⚠️  No hay música disponible, publicando sin música de fondo');
+    }
+    
+    // Descargar miniatura si existe (solo para videos largos)
+    if (esVideoLargo && video.guiones?.miniatura_url) {
+      console.log('   🖼️  Descargando miniatura personalizada...');
+      miniaturaPath = rutaVideoLocal.replace('.mp4', '_miniatura.jpg');
+      const { descargarArchivo } = require('../../utils/file');
+      await descargarArchivo(video.guiones.miniatura_url, miniaturaPath);
     }
 
     // Configurar OAuth2

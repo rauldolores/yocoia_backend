@@ -63,22 +63,29 @@ async function publicarEnFacebook(video, canal, rutaVideoLocal) {
     
     console.log(`   📝 Título Facebook (${tituloFacebook.length} chars): "${tituloFacebook}"`);
     
-    // Verificar si el canal tiene música de fondo configurada para Facebook
+    // Agregar música de fondo
     let rutaVideoFinal = rutaVideoLocal;
+    console.log('   🎵 Buscando música de fondo para Facebook (32% volumen)...');
     
-    if (canal.musica_fondo_facebook_url) {
-      console.log('   🎵 Canal tiene música de fondo para Facebook configurada');
-      
-      // Crear ruta para video con música
+    const { obtenerMusicaAleatoria } = require('../../database/musica');
+    const tipoContenido = 'video_corto'; // Facebook solo publica videos cortos
+    const musica = await obtenerMusicaAleatoria(tipoContenido, 'facebook');
+    
+    if (musica) {
+      console.log(`   🎵 Agregando música: "${musica.nombre}"`);
       rutaVideoConMusica = rutaVideoLocal.replace('.mp4', '_facebook_musica.mp4');
       
-      // Agregar música de fondo
-      await agregarMusicaDeFondo(rutaVideoLocal, canal.musica_fondo_facebook_url, rutaVideoConMusica);
+      await agregarMusicaDeFondo(
+        rutaVideoLocal,
+        musica.archivo_url,
+        rutaVideoConMusica,
+        0.32 // 32% volumen
+      );
       
       rutaVideoFinal = rutaVideoConMusica;
       console.log(`   ✅ Video con música listo: ${path.basename(rutaVideoFinal)}`);
     } else {
-      console.log('   ℹ️  No se agregará música de fondo (no configurada en canal)');
+      console.log('   ⚠️  No hay música disponible, publicando sin música de fondo');
     }
 
     // Verificar credenciales de Facebook
