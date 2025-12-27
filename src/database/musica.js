@@ -14,15 +14,16 @@ async function obtenerMusicaAleatoria(tipoContenido, plataforma) {
   try {
     console.log(`   🎵 Buscando música para ${tipoContenido} en ${plataforma}...`);
     
-    // Construir filtro para plataforma usando JSONB
-    const filtroPlataforma = `plataformas->>${plataforma}`;
+    // Construir objeto JSONB para filtrar por plataforma
+    const filtroPlataformaObj = {};
+    filtroPlataformaObj[plataforma] = true;
     
     const { data, error } = await supabase
       .from('musica_fondo')
       .select('*')
       .eq('tipo_contenido', tipoContenido)
       .eq('activo', true)
-      .eq(filtroPlataforma, 'true');
+      .contains('plataformas', filtroPlataformaObj);
     
     if (error) throw error;
     
