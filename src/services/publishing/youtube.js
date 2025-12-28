@@ -199,7 +199,8 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
         snippet: snippet,
         status: {
           privacyStatus: 'public',
-          selfDeclaredMadeForKids: false
+          selfDeclaredMadeForKids: false,
+          selfDeclaredMadeByAI: true  // Marcar como contenido generado con IA
         }
       },
       media: {

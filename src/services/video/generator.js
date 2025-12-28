@@ -379,10 +379,24 @@ async function generarVideo(rutasMedias, rutaAudio, duracionPorSegmento, rutaSal
         console.log('📝 Agregando subtítulos al video...');
         const rutaASSEscapada = rutaASS.replace(/\\/g, '/').replace(/:/g, '\\:');
         
+        // Determinar si necesitamos especificar directorio de fuentes
+        const fuenteInfo = opciones.fuenteInfo;
+        let filtroASS = `ass='${rutaASSEscapada}'`;
+        
+        if (fuenteInfo && !fuenteInfo.usarSistema && fuenteInfo.ruta) {
+          // Si usa fuente personalizada, especificar directorio de fuentes
+          const path = require('path');
+          const { FONTS_DIR } = require('../../utils/fonts');
+          const fontsDirEscapado = FONTS_DIR.replace(/\\/g, '/').replace(/:/g, '\\:');
+          filtroASS = `ass='${rutaASSEscapada}':fontsdir='${fontsDirEscapado}'`;
+          console.log(`   🔤 Usando fuente personalizada: ${fuenteInfo.nombre}`);
+          console.log(`   📁 Directorio de fuentes: ${FONTS_DIR}`);
+        }
+        
         await new Promise((resolveSubs, rejectSubs) => {
           ffmpeg(rutaVideoTemp)
             .outputOptions([
-              `-vf ass='${rutaASSEscapada}'`,
+              `-vf ${filtroASS}`,
               '-c:a copy'
             ])
             .output(rutaSalida)

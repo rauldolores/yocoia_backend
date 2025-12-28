@@ -143,9 +143,9 @@ async function procesarGuionIndividual(guion) {
     // 10. Agrupar palabras en subtítulos (1-3 palabras estilo TikTok)
     const subtitulos = agruparPalabrasEnSubtitulos(palabras, 3);
     
-    // 11. Generar archivo ASS con subtítulos
+    // 11. Generar archivo ASS con subtítulos y obtener info de fuente
     const rutaASS = path.join(tempDirGuion, `subtitulos_${guion.id}.ass`);
-    await generarArchivoASS(subtitulos, rutaASS);
+    const fuenteInfo = await generarArchivoASS(subtitulos, rutaASS);
 
     // 12. Generar video con subtítulos
     // Nota: generarVideo() ahora soporta mezcla de imágenes y videos
@@ -160,7 +160,8 @@ async function procesarGuionIndividual(guion) {
       rutaAudioLocal,
       duracionPorSegmento,
       rutaVideoSalida,
-      rutaASS
+      rutaASS,
+      { fuenteInfo } // Pasar información de la fuente
     );
 
     console.log(`\n✅ VIDEO GENERADO LOCALMENTE: ${rutaVideoSalida}`);

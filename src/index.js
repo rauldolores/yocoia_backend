@@ -232,6 +232,10 @@ async function ejecutarProcesosIniciales() {
  * Función principal
  */
 async function main() {
+  // Verificar y descargar fuentes necesarias
+  const { verificarYDescargarFuentes } = require('./utils/fonts');
+  await verificarYDescargarFuentes();
+  
   // Iniciar servicio de heartbeat
   const heartbeatMinutes = parseInt(process.env.HEARTBEAT_INTERVAL_MINUTES || '5', 10);
   heartbeatIntervalId = await iniciarHeartbeat(heartbeatMinutes);
