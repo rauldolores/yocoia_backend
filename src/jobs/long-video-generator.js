@@ -14,6 +14,7 @@ const { crearDirectorios, limpiarTemp, descargarArchivo, obtenerDuracionAudio } 
 const { generarVideo } = require('../services/video');
 const { subirVideoAStorage } = require('../database/storage');
 const { reportarError, TipoError, Severidad } = require('../services/heartbeat');
+const ffmpeg = require('fluent-ffmpeg');
 
 // Lock para evitar ejecuciones concurrentes
 let isProcessingLongVideos = false;
@@ -244,50 +245,221 @@ async function generarVideoSeccion(guion, seccion, tempDirGuion) {
 }
 
 /**
- * Unir videos de secciones en video final
+ * Generar imagen de título de sección con NanoBanana
  */
-async function unirVideosEnFinal(videosSeccionesPath, outputPath) {
-  const ffmpeg = require('fluent-ffmpeg');
+async function generarImagenTituloSeccion(guion, seccion, numeroSeccion, tempDir) {
+  const apiBaseUrl = process.env.API_BASE_URL;
 
+  if (!apiBaseUrl) {
+    throw new Error('API_BASE_URL no configurado');
+  }
+
+  console.log(`      🎨 Generando imagen de título: "${seccion.titulo}"...`);
+
+  // Construir prompt con el formato especificado
+  const prompt = `Generate a cinematic chapter title card image to be used as a transition between video segments.
+
+MAIN TEXT (mandatory):
+"${seccion.titulo.toUpperCase()}"
+
+TEXT STYLE:
+- All caps
+- Clean, modern sans-serif font
+- Bold weight
+- White color
+- Centered both horizontally and vertically
+- Slight soft glow around the text
+- High contrast against background
+- Professional documentary style
+- Font must look similar to Netflix or Apple TV documentary titles
+
+SMALL TEXT ABOVE:
+"SECCIÓN ${numeroSeccion}" - IMPORTANT: Use the exact spelling "SECCIÓN" with double 'C' and accent on 'O'. - Do not spell it as "SECION".
+- Smaller size
+- Same font family
+- Subtle opacity
+
+BACKGROUND:
+- Real photographic image related to the theme of "${seccion.titulo}"
+- Strong blur applied (heavy blur, background must not be recognizable)
+- Grayscale or near black-and-white
+- Darkened overall tone
+- Soft vignette around the edges
+- Subtle film grain texture
+- No readable text or symbols in the background
+- 16:9 aspect ratio
+
+COMPOSITION:
+- 16:9 aspect ratio
+- Minimalist
+- Calm and serious mood
+- Designed specifically as a video chapter separator
+- Timeless, elegant, authoritative
+
+STRICT RULES: - Spelling must be perfect: "SECCIÓN" (double C).
+- No illustrations
+- No cartoons
+- No bright or saturated colors
+- No decorative, handwritten, or playful fonts
+- No logos
+- No watermarks
+- No busy or sharp background details
+- No color accents
+
+FINAL STYLE KEYWORDS:
+cinematic, documentary, minimalist, serious, professional, elegant, transition screen`;
+
+  const response = await fetch(`${apiBaseUrl}/nanobanana/generate-image`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      guion_id: guion.id,
+      escena: `titulo_seccion_${numeroSeccion}`,
+      prompt: prompt
+    })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error || `HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  const imageUrl = data.asset.url;
+
+  console.log(`      ✅ Imagen generada: ${imageUrl}`);
+
+  // Descargar imagen localmente
+  const imagePath = path.join(tempDir, `titulo_seccion_${numeroSeccion}.jpg`);
+  await descargarArchivo(imageUrl, imagePath);
+
+  return imagePath;
+}
+
+/**
+ * Convertir imagen de título a video estático de 2 segundos
+ */
+async function convertirImagenATituloVideo(imagePath, outputPath) {
   return new Promise((resolve, reject) => {
-    console.log('\n   🔗 Uniendo videos de secciones...');
-    console.log(`   📹 Total de segmentos: ${videosSeccionesPath.length}`);
-
-    // Crear archivo de lista para FFmpeg
-    const listPath = path.join(path.dirname(videosSeccionesPath[0]), 'videos_list.txt');
-    const listContent = videosSeccionesPath.map(p => `file '${p}'`).join('\n');
-    fs.writeFileSync(listPath, listContent);
+    console.log(`      🎬 Convirtiendo imagen a video (2s)...`);
 
     ffmpeg()
-      .input(listPath)
-      .inputOptions(['-f concat', '-safe 0'])
+      .input(imagePath)
+      .inputOptions([
+        '-loop 1',           // Loop la imagen
+        '-t 2'               // Duración de 2 segundos
+      ])
+      .input('anullsrc=r=44100:cl=stereo')  // Generar audio silencioso
+      .inputOptions([
+        '-f lavfi',          // Usar filtro de audio virtual
+        '-t 2'               // Duración de 2 segundos
+      ])
       .outputOptions([
-        '-c copy' // Copiar sin recodificar (más rápido)
+        '-vf scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1', // 16:9 con padding
+        '-c:v libx264',      // Codec H.264
+        '-c:a aac',          // Codec de audio
+        '-b:a 192k',         // Bitrate de audio (mismo que los videos de sección)
+        '-ar 44100',         // Sample rate (mismo que los videos de sección)
+        '-pix_fmt yuv420p',  // Formato de pixel compatible
+        '-r 30',             // 30 fps
+        '-shortest'          // Terminar cuando el input más corto termine
       ])
       .output(outputPath)
       .on('start', (cmd) => {
-        console.log('   ▶️  Comando FFmpeg:', cmd);
-      })
-      .on('progress', (progress) => {
-        if (progress.percent) {
-          console.log(`   ⏳ Progreso unión: ${Math.round(progress.percent)}%`);
-        }
+        console.log(`      ▶️  Comando FFmpeg: ${cmd}`);
       })
       .on('end', () => {
-        console.log('   ✅ Videos unidos exitosamente');
-        // Limpiar archivo temporal
-        try {
-          fs.unlinkSync(listPath);
-        } catch (e) {
-          // Ignorar error de limpieza
-        }
+        console.log(`      ✅ Video de título creado (con audio silencioso): ${outputPath}`);
         resolve(outputPath);
       })
       .on('error', (err) => {
-        console.error('   ❌ Error al unir videos:', err.message);
+        console.error(`      ❌ Error al convertir imagen a video:`, err.message);
         reject(err);
       })
       .run();
+  });
+}
+
+/**
+ * Unir videos de secciones en video final
+ */
+async function unirVideosEnFinal(videosSeccionesPath, outputPath, secciones, guion, tempDir) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      console.log('\n   🎨 Generando títulos de secciones...');
+      
+      // Generar videos de título para cada sección
+      const videosConTitulos = [];
+      
+      for (let i = 0; i < secciones.length; i++) {
+        const seccion = secciones[i];
+        const numeroSeccion = i + 1;
+        
+        // 1. Generar imagen de título
+        const imagenTituloPath = await generarImagenTituloSeccion(
+          guion,
+          seccion,
+          numeroSeccion,
+          tempDir
+        );
+        
+        // 2. Convertir imagen a video de 2 segundos
+        const videoTituloPath = path.join(tempDir, `titulo_seccion_${numeroSeccion}.mp4`);
+        await convertirImagenATituloVideo(imagenTituloPath, videoTituloPath);
+        
+        // 3. Agregar título y luego video de la sección
+        videosConTitulos.push(videoTituloPath);
+        videosConTitulos.push(videosSeccionesPath[i]);
+        
+        console.log(`      ✅ Sección ${numeroSeccion}: Título + Video listos`);
+      }
+      
+      console.log('\n   🔗 Uniendo títulos y videos de secciones...');
+      console.log(`   📹 Total de segmentos: ${videosConTitulos.length} (${secciones.length} títulos + ${secciones.length} videos)`);
+
+      // Crear archivo de lista para FFmpeg
+      const listPath = path.join(tempDir, 'videos_list.txt');
+      const listContent = videosConTitulos.map(p => `file '${p}'`).join('\n');
+      fs.writeFileSync(listPath, listContent);
+
+      ffmpeg()
+        .input(listPath)
+        .inputOptions(['-f concat', '-safe 0'])
+        .outputOptions([
+          '-c:v libx264',      // Recodificar video para compatibilidad
+          '-preset fast',      // Preset rápido
+          '-crf 23',           // Calidad constante
+          '-c:a aac',          // Codec de audio
+          '-b:a 192k',         // Bitrate de audio
+          '-ar 44100'          // Sample rate
+        ])
+        .output(outputPath)
+        .on('start', (cmd) => {
+          console.log('   ▶️  Comando FFmpeg:', cmd);
+        })
+        .on('progress', (progress) => {
+          if (progress.percent) {
+            process.stdout.write(`\r   ⏳ Progreso unión: ${Math.round(progress.percent)}%`);
+          }
+        })
+        .on('end', () => {
+          console.log('\n   ✅ Videos unidos exitosamente');
+          // Limpiar archivo temporal
+          try {
+            fs.unlinkSync(listPath);
+          } catch (e) {
+            // Ignorar error de limpieza
+          }
+          resolve(outputPath);
+        })
+        .on('error', (err) => {
+          console.error('\n   ❌ Error al unir videos:', err.message);
+          reject(err);
+        })
+        .run();
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 
@@ -491,22 +663,28 @@ async function procesarGuionLargo(guion) {
     }
 
     console.log(`\n✅ Todas las secciones generadas (${secciones.length})`);
-    console.log(`⏱️  Duración total estimada: ${duracionTotalSegundos.toFixed(2)}s`);
+    console.log(`⏱️  Duración total estimada: ${duracionTotalSegundos.toFixed(2)}s (sin contar títulos)`);
 
-    // 3. Unir videos en video final
+    // 3. Unir videos en video final (con títulos de sección)
     const videoFinalPath = path.join(tempDirGuion, `video_final_${guion.id}.mp4`);
-    await unirVideosEnFinal(videosSeccionesPath, videoFinalPath);
+    await unirVideosEnFinal(videosSeccionesPath, videoFinalPath, secciones, guion, tempDirGuion);
 
-    // 4. Validar que el video final existe
+    // 4. Validar que el video final existe y calcular duración real
     if (!fs.existsSync(videoFinalPath)) {
       throw new Error('No se pudo generar el video final');
     }
 
+    // Calcular duración real del video final (incluye títulos de 2s cada uno)
+    const duracionTitulos = secciones.length * 2; // 2 segundos por título
+    const duracionFinalTotal = duracionTotalSegundos + duracionTitulos;
+    
     const videoStats = fs.statSync(videoFinalPath);
     const videoSizeMB = (videoStats.size / (1024 * 1024)).toFixed(2);
     console.log(`\n✅ Video final generado:`);
     console.log(`   📁 Tamaño: ${videoSizeMB} MB`);
-    console.log(`   ⏱️  Duración: ${duracionTotalSegundos.toFixed(2)}s`);
+    console.log(`   ⏱️  Duración secciones: ${duracionTotalSegundos.toFixed(2)}s`);
+    console.log(`   🎨 Duración títulos: ${duracionTitulos}s (${secciones.length} títulos × 2s)`);
+    console.log(`   ⏱️  Duración total: ${duracionFinalTotal.toFixed(2)}s`);
 
     // 5. Subir video final a storage
     console.log('\n☁️  Subiendo video final a storage...');
@@ -527,7 +705,7 @@ async function procesarGuionLargo(guion) {
       storagePath,
       videoUrl,
       videoStats.size,
-      duracionTotalSegundos
+      duracionFinalTotal
     );
 
     // 7. Actualizar estado del guion
