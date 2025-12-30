@@ -21,6 +21,8 @@ const {
   generarAssets
 } = require('./jobs');
 const { iniciarHeartbeat, detenerHeartbeat, EstadoConsola, cambiarEstado } = require('./services/heartbeat');
+const { notificarInfo } = require('./services/telegram');
+const os = require('os');
 
 // Variable global para el intervalo de heartbeat
 let heartbeatIntervalId = null;
@@ -109,6 +111,7 @@ async function mostrarCanalesProcesados() {
 
 /**
  * Configurar tareas programadas con cron
+ * @returns {number} - Cantidad de cron jobs activos
  */
 function iniciarCron() {
   console.log('🚀 Iniciando servicios automatizados...');
@@ -200,6 +203,78 @@ function iniciarCron() {
     console.log(`\n✅ ${cronCount} cron job(s) activo(s)`);
     console.log('⏳ Esperando próximas ejecuciones...\n');
   }
+  
+  return cronCount;
+}
+
+/**
+ * Enviar notificación de inicio del sistema a Telegram
+ * @param {number} cronCount - Cantidad de cron jobs activos
+ */
+async function enviarNotificacionInicio(cronCount) {
+  try {
+    // Obtener información del sistema
+    const hostname = os.hostname();
+    const platform = os.platform();
+    const release = os.release();
+    const totalMemGB = (os.totalmem() / (1024 ** 3)).toFixed(2);
+    const freeMemGB = (os.freemem() / (1024 ** 3)).toFixed(2);
+    const usedMemGB = (totalMemGB - freeMemGB).toFixed(2);
+    const cpus = os.cpus()[0].model;
+    const coresCount = os.cpus().length;
+    const uptime = Math.floor(os.uptime() / 60); // minutos
+    
+    // Obtener configuración
+    const timezone = process.env.TZ || 'America/Santo_Domingo';
+    const horasPublicacion = process.env.HORAS_PUBLICACION || '10,14,18,22';
+    const heartbeatMinutes = process.env.HEARTBEAT_INTERVAL_MINUTES || '5';
+    const channelFilter = process.env.CHANNEL_FILTER || 'ninguno';
+    
+    // Construir lista de cron jobs
+    const cronJobs = [];
+    if (process.env.CRON_VIDEO_GENERATOR_ENABLED === 'true') {
+      cronJobs.push(`• Generador de videos cortos: ${process.env.CRON_VIDEO_GENERATOR || '*/30 * * * *'}`);
+    }
+    if (process.env.CRON_PUBLISHER_ENABLED === 'true') {
+      cronJobs.push(`• Publicador: ${process.env.CRON_PUBLISHER || '5 10,14,18,22 * * *'}`);
+    }
+    if (process.env.CRON_LONG_VIDEO_ENABLED === 'true') {
+      cronJobs.push(`• Generador de videos largos: ${process.env.CRON_LONG_VIDEO || '0 2 * * 0'}`);
+    }
+    
+    const cronJobsText = cronJobs.length > 0 
+      ? cronJobs.join('\n')
+      : '⚠️ Ningún cron job activo';
+    
+    // Construir mensaje
+    const mensaje = `🚀 <b>Sistema YOCOIA iniciado correctamente</b>
+
+📊 <b>Información del Sistema</b>
+━━━━━━━━━━━━━━━━━━━━
+🖥️ Servidor: <code>${hostname}</code>
+💻 SO: ${platform} ${release}
+🧠 CPU: ${cpus} (${coresCount} cores)
+💾 RAM: ${usedMemGB} GB / ${totalMemGB} GB (${freeMemGB} GB libre)
+⏱️ Uptime del sistema: ${uptime} minutos
+
+⚙️ <b>Configuración</b>
+━━━━━━━━━━━━━━━━━━━━
+🌍 Zona horaria: <code>${timezone}</code>
+📅 Horas de publicación: <code>${horasPublicacion}</code>
+💓 Heartbeat: cada ${heartbeatMinutes} minutos
+📺 Filtro de canales: <code>${channelFilter}</code>
+
+⏰ <b>Cron Jobs Activos (${cronCount})</b>
+━━━━━━━━━━━━━━━━━━━━
+${cronJobsText}
+
+✅ El sistema está operativo y listo para procesar videos.`;
+
+    await notificarInfo(mensaje);
+    console.log('📱 Notificación de inicio enviada a Telegram\n');
+  } catch (error) {
+    console.log('⚠️  No se pudo enviar notificación de inicio:', error.message);
+  }
 }
 
 /**
@@ -250,10 +325,13 @@ async function main() {
   await ejecutarProcesosIniciales();
 
   // Iniciar los cron jobs
-  iniciarCron();
+  const cronCount = iniciarCron();
   
   // Cambiar estado a activa después de inicialización
   cambiarEstado(EstadoConsola.ACTIVA);
+  
+  // Enviar notificación de inicio a Telegram
+  await enviarNotificacionInicio(cronCount);
 
   // Mantener el proceso vivo y manejar cierre graceful
   process.on('SIGINT', () => {
