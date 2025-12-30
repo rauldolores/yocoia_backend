@@ -7,6 +7,7 @@ const { obtenerVideosListosParaPublicar, actualizarVideoPublicado } = require('.
 const { descargarVideoParaPublicar } = require('../database');
 const { publicarEnYouTube, publicarEnFacebook } = require('../services/publishing');
 const { reportarError, reportarPublicacion, TipoError, Severidad } = require('../services/heartbeat');
+const { notificarPublicacionExitosa, notificarError } = require('../services/telegram');
 
 // Lock para evitar ejecuciones concurrentes
 let isPublishingToSocial = false;
@@ -88,6 +89,15 @@ async function publicarEnRedesSociales() {
               publicadosYouTube++;
               console.log('   ✅ Publicado en YouTube');
               
+              // Notificar a Telegram
+              await notificarPublicacionExitosa({
+                canal: canal.nombre,
+                titulo: video.titulo,
+                plataforma: 'youtube',
+                videoId: youtubeId,
+                tipoContenido: video.guiones?.tipo_contenido || 'video_corto'
+              });
+              
               // Reportar publicación exitosa
               const duracionYT = Math.round((Date.now() - inicioYT) / 1000);
               await reportarPublicacion({
@@ -105,6 +115,14 @@ async function publicarEnRedesSociales() {
           } catch (errorYT) {
             console.error('   ❌ Error en YouTube:', errorYT.message);
             erroresYouTube++;
+            
+            // Notificar error a Telegram
+            await notificarError({
+              tipo: 'publicacion',
+              mensaje: 'Error al publicar en YouTube',
+              contexto: `Canal: ${canal.nombre} - Video: ${video.titulo}`,
+              error: errorYT
+            });
             
             // Reportar error
             await reportarError({
@@ -137,6 +155,15 @@ async function publicarEnRedesSociales() {
               publicadosFacebook++;
               console.log('   ✅ Publicado en Facebook');
               
+              // Notificar a Telegram
+              await notificarPublicacionExitosa({
+                canal: canal.nombre,
+                titulo: video.titulo,
+                plataforma: 'facebook',
+                videoId: facebookId,
+                tipoContenido: 'video_corto'
+              });
+              
               // Reportar publicación exitosa
               const duracionFB = Math.round((Date.now() - inicioFB) / 1000);
               await reportarPublicacion({
@@ -154,6 +181,14 @@ async function publicarEnRedesSociales() {
           } catch (errorFB) {
             console.error('   ❌ Error en Facebook:', errorFB.message);
             erroresFacebook++;
+            
+            // Notificar error a Telegram
+            await notificarError({
+              tipo: 'publicacion',
+              mensaje: 'Error al publicar en Facebook',
+              contexto: `Canal: ${canal.nombre} - Video: ${video.titulo}`,
+              error: errorFB
+            });
             
             // Reportar error
             await reportarError({

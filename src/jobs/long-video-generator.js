@@ -14,6 +14,7 @@ const { crearDirectorios, limpiarTemp, descargarArchivo, obtenerDuracionAudio } 
 const { generarVideo } = require('../services/video');
 const { subirVideoAStorage } = require('../database/storage');
 const { reportarError, TipoError, Severidad } = require('../services/heartbeat');
+const { notificarInicioVideoLargo, notificarVideoLargoCompletado, notificarError } = require('../services/telegram');
 const ffmpeg = require('fluent-ffmpeg');
 
 // Lock para evitar ejecuciones concurrentes
@@ -632,6 +633,13 @@ async function procesarGuionLargo(guion) {
 
     console.log(`✅ ${secciones.length} secciones encontradas`);
 
+    // Notificar inicio a Telegram
+    await notificarInicioVideoLargo({
+      canal: guion.canales?.nombre || 'Sin canal',
+      titulo: guion.nombre,
+      numSecciones: secciones.length
+    });
+
     // 2. Generar video de cada sección
     console.log('\n🎬 Generando videos por sección...');
     let duracionTotalSegundos = 0;
@@ -711,6 +719,14 @@ async function procesarGuionLargo(guion) {
     // 7. Actualizar estado del guion
     await actualizarEstadoGuion(guion.id, 'video_producido');
 
+    // Notificar finalización a Telegram
+    await notificarVideoLargoCompletado({
+      canal: guion.canales?.nombre || 'Sin canal',
+      titulo: guion.nombre,
+      duracion: duracionFinalTotal,
+      tamanoMB: videoSizeMB
+    });
+
     console.log('\n' + '═'.repeat(80));
     console.log('✅ GUION LARGO PROCESADO EXITOSAMENTE');
     console.log('═'.repeat(80) + '\n');
@@ -720,6 +736,14 @@ async function procesarGuionLargo(guion) {
   } catch (error) {
     console.error('\n❌ ERROR AL PROCESAR GUION LARGO:', error.message);
     console.error('Stack:', error.stack);
+
+    // Notificar error a Telegram
+    await notificarError({
+      tipo: 'generacion_video',
+      mensaje: 'Error al procesar video largo',
+      contexto: `Canal: ${guion.canales?.nombre || 'Sin canal'} - Guion: ${guion.nombre}`,
+      error: error
+    });
 
     await reportarError({
       tipo: TipoError.PROCESSING,

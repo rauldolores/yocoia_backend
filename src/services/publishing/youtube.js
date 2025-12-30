@@ -103,16 +103,9 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
 
     // Limpiar y validar el título
     tituloYouTube = tituloYouTube.trim();
+    
+    tituloFinal = tituloYouTube; // Videos cortos y largos: sin #Shorts
 
-    // Agregar #Shorts solo si es video corto
-    let tituloFinal;
-    if (esVideoLargo) {
-      tituloFinal = tituloYouTube; // Videos largos: sin #Shorts
-    } else {
-      tituloFinal = tituloYouTube.includes('#Shorts') 
-        ? tituloYouTube 
-        : `${tituloYouTube} #Shorts`;
-    }
 
     // YouTube tiene límite de 100 caracteres para títulos
     const MAX_TITULO_LENGTH = 100;
