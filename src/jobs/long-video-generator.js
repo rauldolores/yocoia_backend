@@ -15,6 +15,7 @@ const { generarVideo } = require('../services/video');
 const { subirVideoAStorage } = require('../database/storage');
 const { reportarError, TipoError, Severidad } = require('../services/heartbeat');
 const { notificarInicioVideoLargo, notificarVideoLargoCompletado, notificarError } = require('../services/telegram');
+const { generateImage: generateFlux2Image } = require('../services/flux2');
 const ffmpeg = require('fluent-ffmpeg');
 
 // Lock para evitar ejecuciones concurrentes
@@ -246,92 +247,38 @@ async function generarVideoSeccion(guion, seccion, tempDirGuion) {
 }
 
 /**
- * Generar imagen de título de sección con NanoBanana
+ * Generar imagen de título de sección con Flux 2
  */
 async function generarImagenTituloSeccion(guion, seccion, numeroSeccion, tempDir) {
-  const apiBaseUrl = process.env.API_BASE_URL;
+  console.log(`      🎨 Generando imagen de título con Flux 2: "${seccion.titulo}"...`);
 
-  if (!apiBaseUrl) {
-    throw new Error('API_BASE_URL no configurado');
-  }
+  // Construir prompt simplificado pero específico
+  const prompt = `Cinematic documentary chapter title card, 16:9 aspect ratio.
 
-  console.log(`      🎨 Generando imagen de título: "${seccion.titulo}"...`);
+Main text centered: "${seccion.titulo.toUpperCase()}"
+Small text above: "SECCIÓN ${numeroSeccion}"
 
-  // Construir prompt con el formato especificado
-  const prompt = `Generate a cinematic chapter title card image to be used as a transition between video segments.
+Style: Clean modern sans-serif font, bold white text with subtle glow, high contrast. Netflix/Apple TV documentary aesthetic.
 
-MAIN TEXT (mandatory):
-"${seccion.titulo.toUpperCase()}"
+Background: Heavily blurred photographic image related to "${seccion.titulo}", grayscale/near black-and-white, darkened, soft vignette, film grain texture. Background must be unrecognizable due to blur.
 
-TEXT STYLE:
-- All caps
-- Clean, modern sans-serif font
-- Bold weight
-- White color
-- Centered both horizontally and vertically
-- Slight soft glow around the text
-- High contrast against background
-- Professional documentary style
-- Font must look similar to Netflix or Apple TV documentary titles
+Mood: Minimalist, professional, elegant, authoritative, calm and serious.
 
-SMALL TEXT ABOVE:
-"SECCIÓN ${numeroSeccion}" - IMPORTANT: Use the exact spelling "SECCIÓN" with double 'C' and accent on 'O'. - Do not spell it as "SECION".
-- Smaller size
-- Same font family
-- Subtle opacity
+Rules: No illustrations, no cartoons, no bright colors, no decorative fonts, no logos, no watermarks, no sharp background details.`;
 
-BACKGROUND:
-- Real photographic image related to the theme of "${seccion.titulo}"
-- Strong blur applied (heavy blur, background must not be recognizable)
-- Grayscale or near black-and-white
-- Darkened overall tone
-- Soft vignette around the edges
-- Subtle film grain texture
-- No readable text or symbols in the background
-- 16:9 aspect ratio
-
-COMPOSITION:
-- 16:9 aspect ratio
-- Minimalist
-- Calm and serious mood
-- Designed specifically as a video chapter separator
-- Timeless, elegant, authoritative
-
-STRICT RULES: - Spelling must be perfect: "SECCIÓN" (double C).
-- No illustrations
-- No cartoons
-- No bright or saturated colors
-- No decorative, handwritten, or playful fonts
-- No logos
-- No watermarks
-- No busy or sharp background details
-- No color accents
-
-FINAL STYLE KEYWORDS:
-cinematic, documentary, minimalist, serious, professional, elegant, transition screen`;
-
-  const response = await fetch(`${apiBaseUrl}/nanobanana/generate-image`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      guion_id: guion.id,
-      escena: `titulo_seccion_${numeroSeccion}`,
-      prompt: prompt
-    })
+  // Generar imagen con Flux 2
+  const imageUrl = await generateFlux2Image(prompt, {
+    image_size: 'landscape_16_9',
+    guidance_scale: 2.5,
+    num_inference_steps: 28,
+    enable_safety_checker: true,
+    output_format: 'png'
   });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error || `HTTP ${response.status}`);
-  }
-
-  const data = await response.json();
-  const imageUrl = data.asset.url;
 
   console.log(`      ✅ Imagen generada: ${imageUrl}`);
 
   // Descargar imagen localmente
-  const imagePath = path.join(tempDir, `titulo_seccion_${numeroSeccion}.jpg`);
+  const imagePath = path.join(tempDir, `titulo_seccion_${numeroSeccion}.png`);
   await descargarArchivo(imageUrl, imagePath);
 
   return imagePath;
