@@ -150,6 +150,8 @@ async function verificarAssetsExistentes(guionId) {
   }
 
   const tieneAudio = assets?.some(a => a.tipo === 'audio') || false;
+  const audioExistente = assets?.find(a => a.tipo === 'audio');
+  const duracionAudioExistente = audioExistente?.metadata?.duration_seconds || null;
   
   // Extraer números de escena de las imágenes existentes
   const imagenesExistentes = assets?.filter(a => a.tipo === 'imagen') || [];
@@ -179,7 +181,8 @@ async function verificarAssetsExistentes(guionId) {
   }
 
   return {
-    tieneAudio: tieneAudio,
+    tieneAudio,
+    duracionAudioExistente,
     imagenesGeneradas: escemasGeneradas,
     totalImagenes: imagenesExistentes.length
   };
@@ -303,13 +306,16 @@ async function procesarGuion(guion) {
     }
 
     // 2. Verificar assets existentes
-    const { tieneAudio, imagenesGeneradas, totalImagenes } = await verificarAssetsExistentes(guion.id);
+    const { tieneAudio, duracionAudioExistente, imagenesGeneradas, totalImagenes } = await verificarAssetsExistentes(guion.id);
 
     let audioGenerado = tieneAudio;
-    let duracionAudio = detalleJson.narracion.tiempo_fin || 30;
+    let duracionAudio = duracionAudioExistente || detalleJson.narracion.tiempo_fin || 30;
 
     console.log(`   📊 Assets actuales:`);
     console.log(`      • Audio: ${tieneAudio ? '✅ Ya existe' : '❌ Falta'}`);
+    if (tieneAudio && duracionAudioExistente) {
+      console.log(`      • Duración audio existente: ${duracionAudioExistente}s`);
+    }
     console.log(`      • Imágenes existentes: ${totalImagenes}`);
     if (imagenesGeneradas.length > 0) {
       console.log(`      • Escenas detectadas: [${imagenesGeneradas.sort((a, b) => a - b).join(', ')}]`);

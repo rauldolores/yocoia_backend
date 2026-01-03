@@ -92,6 +92,19 @@ async function contarGuionesGenerados(canalId) {
  * @returns {number} Cantidad de ideas marcadas
  */
 async function marcarIdeasComoUtilizadas(canalId, cantidad) {
+  // 0. Primero verificar si ya hay ideas marcadas pendientes de procesar
+  const { count: ideasPendientes } = await supabase
+    .from('ideas')
+    .select('id', { count: 'exact', head: true })
+    .eq('canal_id', canalId)
+    .eq('utilizada', true)
+    .is('guion_id', null);
+
+  if (ideasPendientes > 0) {
+    console.log(`   ⚠️  Ya hay ${ideasPendientes} ideas marcadas esperando ser procesadas, omitiendo marcado adicional`);
+    return 0;
+  }
+
   // 1. Obtener las ideas más antiguas sin utilizar
   const { data: ideas, error: errorSelect } = await supabase
     .from('ideas')

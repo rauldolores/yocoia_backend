@@ -2,8 +2,34 @@ const { supabase, TIMEZONE, CHANNEL_FILTER } = require('../../config');
 const { obtenerFechaMexico, obtenerTimestampMexico } = require('../../utils/date');
 const { generarGuionDesdeAPI } = require('./api-client');
 
+// Constantes configurables
+const MAX_IDEAS_POR_EJECUCION = 10;
+const UMBRAL_MINIMO_GUIONES = parseInt(process.env.UMBRAL_MINIMO_GUIONES || '5', 10);
+
 // Lock para evitar ejecuciones concurrentes
 let isGeneratingGuiones = false;
+
+/**
+ * Contar guiones generados (sin video) de un canal
+ * @param {string} canalId - ID del canal
+ * @returns {Promise<number>}
+ */
+async function contarGuionesGenerados(canalId) {
+  try {
+    const { count, error } = await supabase
+      .from('guiones')
+      .select('id', { count: 'exact', head: true })
+      .eq('canal_id', canalId)
+      .eq('estado', 'generado')
+      .eq('tipo_guion', 'video_corto');
+
+    if (error) throw error;
+    return count || 0;
+  } catch (error) {
+    console.error('❌ Error al contar guiones generados:', error.message);
+    return 0;
+  }
+}
 
 /**
  * Actualizar idea con el guión generado
@@ -50,7 +76,7 @@ async function generarGuionesDesdeIdeas() {
 
     let generados = 0;
     let errores = 0;
-    const MAX_IDEAS_POR_EJECUCION = 10;
+    let omitidosPorStock = 0;
 
     // Procesar ideas una por una para evitar que la lista en memoria quede desactualizada
     for (let i = 0; i < MAX_IDEAS_POR_EJECUCION; i++) {
@@ -113,6 +139,17 @@ async function generarGuionesDesdeIdeas() {
       console.log(`   Texto: ${idea.texto.substring(0, 100)}...`);
 
       try {
+        // Verificar stock de guiones del canal
+        console.log('   🔍 Verificando stock de guiones...');
+        const guionesGenerados = await contarGuionesGenerados(idea.canal_id);
+        console.log(`   📊 Stock actual: ${guionesGenerados} guiones generados`);
+        
+        if (guionesGenerados >= UMBRAL_MINIMO_GUIONES) {
+          console.log(`   ✅ Canal ya tiene suficientes guiones (${guionesGenerados}/${UMBRAL_MINIMO_GUIONES}), omitiendo...`);
+          omitidosPorStock++;
+          continue; // Pasar a la siguiente idea
+        }
+        
         // Determinar duración según metadata o usar default
         const duracionSegundos = idea.metadata?.duracion_segundos || 30;
         
@@ -138,8 +175,10 @@ async function generarGuionesDesdeIdeas() {
 
     console.log('='.repeat(80));
     console.log('✅ GENERACIÓN DE GUIONES COMPLETADA');
+    console.log(`   Ideas procesadas: ${generados + errores + omitidosPorStock}`);
     console.log(`   Generados: ${generados}`);
     console.log(`   Errores: ${errores}`);
+    console.log(`   Omitidos por stock suficiente: ${omitidosPorStock}`);
     console.log('='.repeat(80) + '\n');
 
   } catch (error) {
