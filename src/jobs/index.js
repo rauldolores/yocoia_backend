@@ -9,6 +9,7 @@
  * - Generación de guiones desde ideas
  * - Validación y generación de ideas
  * - Generación de assets (audio e imágenes)
+ * - Publicación de catálogos en Facebook
  */
 
 const { procesarVideos } = require('./video-generator');
@@ -18,6 +19,7 @@ const { publicarEnRedesSociales } = require('./publisher');
 const { generarGuionesDesdeIdeas } = require('./guion-generator');
 const { validarYGenerarIdeas } = require('./ideas-validator');
 const { generarAssets } = require('./assets-generator');
+const { ejecutarPublicacionesCatalogos } = require('./catalogos-publisher');
 
 module.exports = {
   procesarVideos,
@@ -26,5 +28,6 @@ module.exports = {
   publicarEnRedesSociales,
   generarGuionesDesdeIdeas,
   validarYGenerarIdeas,
-  generarAssets
+  generarAssets,
+  ejecutarPublicacionesCatalogos
 };

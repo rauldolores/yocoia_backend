@@ -110,7 +110,6 @@ async function publicarEnFacebook(video, canal, rutaVideoLocal) {
     console.log(`   📊 Tamaño del video: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
     
     const videoBuffer = fs.readFileSync(rutaVideoFinal);
-    const descripcion = video.descripcion || '';
     
     console.log(`   📤 Iniciando subida a Facebook...`);
     console.log(`   🎬 Formato: Reel (9:16, vertical)`);
@@ -189,14 +188,13 @@ async function publicarEnFacebook(video, canal, rutaVideoLocal) {
     
     console.log(`   ✅ Video transferido exitosamente`);
     
-    // FASE 3: Finalizar subida con título y descripción
+    // FASE 3: Finalizar subida con título como descripción (en Facebook el texto visible es "description")
     console.log('   [3/3] Finalizando publicación...');
     const finishParams = new URLSearchParams({
       upload_phase: 'finish',
       upload_session_id: upload_session_id,
       access_token: access_token,
-      title: tituloFacebook,
-      description: descripcion
+      description: tituloFacebook  // En Facebook, "description" es el texto que se muestra en el post
     });
     
     const finishResponse = await fetch(`${initUrl}?${finishParams.toString()}`, {

@@ -213,6 +213,10 @@ const CRON_CONFIG = {
   assetsGeneration: {
     enabled: process.env.CRON_ASSETS_GENERATION_ENABLED === 'true',
     minutes: parseInt(process.env.CRON_ASSETS_GENERATION_MINUTES) || 8
+  },
+  catalogos: {
+    enabled: process.env.CRON_CATALOGOS_ENABLED === 'true',
+    minutes: parseInt(process.env.CRON_CATALOGOS_MINUTES) || 6
   }
 };
 

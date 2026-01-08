@@ -18,7 +18,8 @@ const {
   publicarEnRedesSociales,
   generarGuionesDesdeIdeas,
   validarYGenerarIdeas,
-  generarAssets
+  generarAssets,
+  ejecutarPublicacionesCatalogos
 } = require('./jobs');
 const { iniciarHeartbeat, detenerHeartbeat, EstadoConsola, cambiarEstado } = require('./services/heartbeat');
 const { notificarInfo } = require('./services/telegram');
@@ -194,6 +195,17 @@ function iniciarCron() {
     console.log(`✅ Cron job ${++cronCount}: Generación de videos largos (cada ${minutes} minutos)`);
   } else {
     console.log('⏸️  Cron job: Generación de videos largos (DESHABILITADO)');
+  }
+
+  // Cron 8: Publicación de catálogos en Facebook
+  if (CRON_CONFIG.catalogos.enabled) {
+    const minutes = CRON_CONFIG.catalogos.minutes;
+    cron.schedule(`*/${minutes} * * * *`, () => {
+      ejecutarPublicacionesCatalogos();
+    });
+    console.log(`✅ Cron job ${++cronCount}: Publicación de catálogos (cada ${minutes} minutos)`);
+  } else {
+    console.log('⏸️  Cron job: Publicación de catálogos (DESHABILITADO)');
   }
   
   if (cronCount === 0) {
