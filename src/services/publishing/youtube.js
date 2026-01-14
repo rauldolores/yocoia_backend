@@ -185,21 +185,61 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
 
     console.log(`   ⬆️  Subiendo video a YouTube...`);
 
-    // Subir video
-    const response = await youtube.videos.insert({
-      part: 'snippet,status',
-      requestBody: {
-        snippet: snippet,
-        status: {
-          privacyStatus: 'public',
-          selfDeclaredMadeForKids: false,
-          selfDeclaredMadeByAI: true  // Marcar como contenido generado con IA
+    // Intentar subir con reintentos en caso de errores de red
+    const MAX_REINTENTOS = 3;
+    let response = null;
+    let ultimoError = null;
+
+    for (let intento = 1; intento <= MAX_REINTENTOS; intento++) {
+      try {
+        if (intento > 1) {
+          console.log(`   🔄 Reintento ${intento}/${MAX_REINTENTOS}...`);
+          // Esperar antes de reintentar (backoff exponencial)
+          await new Promise(resolve => setTimeout(resolve, intento * 2000));
         }
-      },
-      media: {
-        body: fs.createReadStream(rutaVideoFinal)
+
+        response = await youtube.videos.insert({
+          part: 'snippet,status',
+          requestBody: {
+            snippet: snippet,
+            status: {
+              privacyStatus: 'public',
+              selfDeclaredMadeForKids: false,
+              selfDeclaredMadeByAI: true  // Marcar como contenido generado con IA
+            }
+          },
+          media: {
+            body: fs.createReadStream(rutaVideoFinal)
+          }
+        });
+
+        // Si llegamos aquí, la subida fue exitosa
+        break;
+
+      } catch (error) {
+        ultimoError = error;
+        
+        // Verificar si es un error recuperable (red, timeout)
+        const esErrorRecuperable = 
+          error.message.includes('ECONNRESET') ||
+          error.message.includes('ETIMEDOUT') ||
+          error.message.includes('ENOTFOUND') ||
+          error.message.includes('socket hang up') ||
+          error.code === 'ECONNRESET' ||
+          error.code === 'ETIMEDOUT';
+
+        if (!esErrorRecuperable || intento === MAX_REINTENTOS) {
+          // Error no recuperable o último intento fallido
+          throw error;
+        }
+
+        console.log(`   ⚠️  Error de red: ${error.message}`);
       }
-    });
+    }
+
+    if (!response) {
+      throw ultimoError || new Error('No se pudo subir el video después de varios intentos');
+    }
 
     const videoId = response.data.id;
     
@@ -233,9 +273,31 @@ async function publicarEnYouTube(video, canal, rutaVideoLocal) {
 
   } catch (error) {
     console.error('   ❌ Error al publicar en YouTube:', error.message);
-    if (error.response?.data) {
-      console.error('   Detalles:', JSON.stringify(error.response.data, null, 2));
+    
+    // Mostrar información detallada del error
+    if (error.code) {
+      console.error('   📋 Código de error:', error.code);
     }
+    
+    if (error.response?.data) {
+      console.error('   📋 Detalles de la API:', JSON.stringify(error.response.data, null, 2));
+    }
+    
+    if (error.response?.status) {
+      console.error('   📋 Status HTTP:', error.response.status);
+    }
+
+    // Información adicional sobre errores comunes
+    if (error.message.includes('ECONNRESET') || error.code === 'ECONNRESET') {
+      console.error('   💡 Sugerencia: Error de conexión. Verifica tu red o intenta más tarde.');
+    } else if (error.message.includes('quota')) {
+      console.error('   💡 Sugerencia: Cuota de API de YouTube excedida. Espera 24 horas.');
+    } else if (error.response?.status === 401) {
+      console.error('   💡 Sugerencia: Token de YouTube inválido o expirado. Renueva las credenciales.');
+    } else if (error.response?.status === 403) {
+      console.error('   💡 Sugerencia: Permisos insuficientes o límite de subidas alcanzado.');
+    }
+    
     throw error;
   } finally {
     // Limpiar archivo temporal con música
