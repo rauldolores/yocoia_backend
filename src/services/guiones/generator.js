@@ -21,7 +21,7 @@ async function contarGuionesGenerados(canalId) {
       .select('id', { count: 'exact', head: true })
       .eq('canal_id', canalId)
       .eq('estado', 'generado')
-      .eq('tipo_guion', 'video_corto');
+      .eq('tipo_guion', 'corto');
 
     if (error) throw error;
     return count || 0;
