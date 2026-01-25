@@ -74,6 +74,13 @@ async function generarGuionesDesdeIdeas() {
     console.log('⏰ Timestamp México:', obtenerFechaMexico().toLocaleString('es-MX', { timeZone: TIMEZONE }));
     console.log('='.repeat(80) + '\n');
 
+    // 🔍 DEBUG: Mostrar configuración de filtros
+    console.log('🔍 DEBUG - Configuración de filtros:');
+    console.log(`   • Filtro habilitado: ${CHANNEL_FILTER.enabled}`);
+    console.log(`   • IDs en filtro: ${CHANNEL_FILTER.channels.ids.length > 0 ? CHANNEL_FILTER.channels.ids.join(', ') : 'Ninguno'}`);
+    console.log(`   • Nombres en filtro: ${CHANNEL_FILTER.channels.names.length > 0 ? CHANNEL_FILTER.channels.names.join(', ') : 'Ninguno'}`);
+    console.log('');
+
     let generados = 0;
     let errores = 0;
     let omitidosPorStock = 0;
@@ -105,6 +112,7 @@ async function generarGuionesDesdeIdeas() {
         query = query.in('canal_id', CHANNEL_FILTER.channels.ids);
       }
 
+
       const { data: ideas, error } = await query;
 
       if (error) {
@@ -112,19 +120,60 @@ async function generarGuionesDesdeIdeas() {
         break;
       }
 
+      // 🔍 DEBUG: Mostrar ideas encontradas antes del filtro
+      if (i === 0) {
+        console.log(`🔍 DEBUG - Ideas encontradas en query: ${ideas?.length || 0}`);
+        if (ideas && ideas.length > 0) {
+          ideas.forEach((idea, idx) => {
+            console.log(`   ${idx + 1}. Canal: "${idea.canales?.nombre}" (${idea.canal_id})`);
+            console.log(`      Idea: ${idea.texto.substring(0, 60)}...`);
+          });
+        }
+        console.log('');
+      }
+
       // Si hay filtro por nombres de canal, aplicarlo en memoria
       let ideasFiltradas = ideas || [];
       if (CHANNEL_FILTER.enabled && CHANNEL_FILTER.channels.names.length > 0 && ideasFiltradas.length > 0) {
+        // 🔍 DEBUG: Antes del filtrado
+        const antesDelFiltro = ideasFiltradas.length;
+        
         ideasFiltradas = ideasFiltradas.filter(idea => {
           const nombreCanal = idea.canales?.nombre;
-          return nombreCanal && CHANNEL_FILTER.channels.names.includes(nombreCanal);
+          const incluido = nombreCanal && CHANNEL_FILTER.channels.names.includes(nombreCanal);
+          
+          // 🔍 DEBUG: Mostrar cada comparación
+          if (i === 0) {
+            console.log(`🔍 DEBUG - Filtro por nombre:`);
+            console.log(`   Canal: "${nombreCanal}"`);
+            console.log(`   ¿Está en filtro?: ${incluido ? '✅ SÍ' : '❌ NO'}`);
+            if (!incluido) {
+              console.log(`   (Buscando en: [${CHANNEL_FILTER.channels.names.join(', ')}])`);
+            }
+            console.log('');
+          }
+          
+          return incluido;
         });
+        
+        // 🔍 DEBUG: Después del filtrado
+        if (i === 0) {
+          console.log(`🔍 DEBUG - Resultado del filtrado:`);
+          console.log(`   Antes: ${antesDelFiltro} ideas`);
+          console.log(`   Después: ${ideasFiltradas.length} ideas`);
+          console.log(`   Descartadas: ${antesDelFiltro - ideasFiltradas.length}`);
+          console.log('');
+        }
       }
 
       // Si no hay más ideas pendientes, terminar
       if (!ideasFiltradas || ideasFiltradas.length === 0) {
         if (i === 0) {
           console.log('⚠️  No hay ideas pendientes para generar guiones');
+          console.log('   Posibles causas:');
+          console.log('   1. No hay ideas con utilizada=true y guion_id=null');
+          console.log('   2. Las ideas encontradas fueron filtradas por canal');
+          console.log('   3. Verifica el filtro FILTER_CHANNEL_NAMES en .env');
         }
         break;
       }
